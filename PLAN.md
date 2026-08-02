@@ -418,10 +418,15 @@ HTTPS работает через Secure Transport на macOS, SChannel на Win
 на Linux.
 
 Минимальный состав: декодеры и парсеры `aac,h264`, демуксеры `hls,mpegts`,
-муксер `mp4`, протоколы `file,http,https,tcp,tls,pipe`, BSF
+муксер `mp4`, протоколы `file,http,https,tcp,tls,udp,pipe`, BSF
 `aac_adtstoasc`. `pipe` нужен для `-progress pipe:1`. Декодеры понадобились
 вопреки исходному плану: без них FFmpeg не извлекает параметры потоков из TS и
 MP4 падает с `dimensions not set`.
+
+`udp` нужен как скрытая link-time зависимость реализации OpenSSL TLS в FFmpeg
+8.1.2: без него `tls_openssl.o` оставляет неопределённые `ff_udp_*`. На Windows
+MinGW создаёт Makefile-цель `ffmpeg.exe`, поэтому скрипт не запрашивает там
+Unix-цель `ffmpeg`.
 
 Итоговый sidecar — 2.4 МБ. В собранном `.app` `otool -L` показывает только
 `/usr/lib/libSystem` и Frameworks из `/System/Library`; ссылок на Homebrew нет.

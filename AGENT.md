@@ -304,8 +304,8 @@ cd src-tauri && cargo test --lib
 `src-tauri/tauri.conf.json`:
 
 ```bash
-git tag app-v0.1.0
-git push origin app-v0.1.0
+git tag app-v0.1.1
+git push origin app-v0.1.1
 ```
 
 Workflow `.github/workflows/release.yml` создаёт публичный GitHub Release и
@@ -344,8 +344,13 @@ DMG собирается для arm64, приложение и ffmpeg подпи
 `--enable-gpl`, x264/x265 и сторонних dylib.
 
 - Включены демуксеры `hls`/`mpegts`, муксер `mp4`, протоколы
-  `file,http,https,tcp,tls,pipe`, BSF `aac_adtstoasc`, парсеры и декодеры
+  `file,http,https,tcp,tls,udp,pipe`, BSF `aac_adtstoasc`, парсеры и декодеры
   `aac,h264`. Декодеры нужны только для анализа параметров потока; энкодеров нет.
+- `udp` напрямую загрузчик не использует, но OpenSSL TLS в FFmpeg 8.1.2
+  ссылается на UDP helpers; без протокола Linux падает на линковке с
+  `undefined reference to ff_udp_*`.
+- Под MinGW цель Makefile называется `ffmpeg.exe`, а не `ffmpeg`; скрипт
+  выбирает цель по платформе.
 - [scripts/fetch-ffmpeg.sh](scripts/fetch-ffmpeg.sh) фиксирует версию и SHA-256,
   собирает бинарь и перед установкой отклоняет GPL или несистемные dylib.
 - Итоговый размер 2.4 МБ. `otool -L` на sidecar внутри собранного `.app`

@@ -33,7 +33,7 @@ bun run tauri dev
 bun run tauri build --bundles dmg
 ```
 
-Результат: `src-tauri/target/release/bundle/dmg/anion-dl_0.1.0_aarch64.dmg`.
+Результат: `src-tauri/target/release/bundle/dmg/anion-dl_0.1.1_aarch64.dmg`.
 Приложение подписывается ad-hoc; для распространения без предупреждений
 Gatekeeper потребуются Developer ID Application и нотарификация Apple.
 
@@ -42,8 +42,8 @@ Gatekeeper потребуются Developer ID Application и нотарифик
 Версия тега должна совпадать с `version` в `src-tauri/tauri.conf.json`:
 
 ```bash
-git tag app-v0.1.0
-git push origin app-v0.1.0
+git tag app-v0.1.1
+git push origin app-v0.1.1
 ```
 
 GitHub Actions соберёт macOS ARM/Intel, Windows x64 и Linux x64, после чего

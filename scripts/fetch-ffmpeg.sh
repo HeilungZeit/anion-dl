@@ -22,6 +22,7 @@ TARGET_TRIPLE="${1:-$HOST_TRIPLE}"
 SOURCE_ARCHIVE="${2:-}"
 DEST_DIR="$SCRIPT_DIR/../src-tauri/binaries"
 DEST_EXTENSION=""
+MAKE_TARGET="ffmpeg"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/anion-dl-ffmpeg.XXXXXX")"
 ARCHIVE="$WORK_DIR/ffmpeg-$FFMPEG_VERSION.tar.xz"
 
@@ -61,6 +62,7 @@ case "$TARGET_TRIPLE" in
         ;;
     esac
     DEST_EXTENSION=".exe"
+    MAKE_TARGET="ffmpeg.exe"
     # Бинарь собирается MinGW, но получает MSVC target suffix: это имя target,
     # под который Tauri собирает само приложение, а не ABI компилятора sidecar.
     set -- --target-os=mingw32 --arch=x86_64 --cc=gcc --enable-schannel --extra-ldflags=-static
@@ -112,12 +114,12 @@ cd "$WORK_DIR/build"
   --enable-decoder=aac,h264 \
   --enable-demuxer=hls,mpegts \
   --enable-muxer=mp4 \
-  --enable-protocol=file,http,https,tcp,tls,pipe \
+  --enable-protocol=file,http,https,tcp,tls,udp,pipe \
   --enable-parser=aac,h264 \
   --enable-bsf=aac_adtstoasc \
   "$@"
 
-make -j "$JOBS" ffmpeg
+make -j "$JOBS" "$MAKE_TARGET"
 
 BUILT_FFMPEG="./ffmpeg$DEST_EXTENSION"
 VERSION_OUTPUT="$($BUILT_FFMPEG -version 2>&1)"
@@ -147,6 +149,7 @@ require_component "HLS demuxer" '^[[:space:]]*D[[:space:]]+hls[[:space:]]*$' "$B
 require_component "MPEG-TS demuxer" '^[[:space:]]*D[[:space:]]+mpegts[[:space:]]*$' "$BUILT_FFMPEG" -hide_banner -demuxers
 require_component "MP4 muxer" '^[[:space:]]*E[[:space:]]+mp4[[:space:]]*$' "$BUILT_FFMPEG" -hide_banner -muxers
 require_component "HTTPS protocol" '^[[:space:]]*https[[:space:]]*$' "$BUILT_FFMPEG" -hide_banner -protocols
+require_component "UDP protocol" '^[[:space:]]*udp[[:space:]]*$' "$BUILT_FFMPEG" -hide_banner -protocols
 require_component "pipe protocol" '^[[:space:]]*pipe[[:space:]]*$' "$BUILT_FFMPEG" -hide_banner -protocols
 require_component "aac_adtstoasc BSF" '^aac_adtstoasc$' "$BUILT_FFMPEG" -hide_banner -bsfs
 
