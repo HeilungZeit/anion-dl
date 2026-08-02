@@ -74,7 +74,8 @@ https://kodikplayer.com/season/120995/<hash>/720p?translations=false&only_episod
 
 Плагины Tauri: `http` (обход CORS), `shell` (ffmpeg-сайдкар), `store`
 (очередь и настройки), `dialog` (выбор папки), `opener` (показать файл в
-Finder).
+Finder), `updater` (проверка и установка релизов), `process` (перезапуск после
+обновления).
 
 ---
 
@@ -453,6 +454,23 @@ macOS ARM/Intel, NSIS EXE для Windows x64, AppImage и DEB для Linux x64.
 У артефактов стабильные имена без версии, поэтому ссылки через
 `releases/latest/download/...` не меняются. Подпись Windows и Developer ID для
 macOS сознательно не настраиваются.
+
+**Э8 — автоматические обновления. 🟡 Реализация готова, нужен GitHub secret.**
+
+Версия `0.1.2` подключает `tauri-plugin-updater` и проверяет при запуске
+`releases/latest/download/latest.json`. Пользователь подтверждает установку в
+нативном диалоге; после загрузки приложение перезапускается через
+`tauri-plugin-process`. Ошибка проверки без сети не мешает запуску.
+
+`createUpdaterArtifacts` включён, а release workflow публикует `.sig`,
+платформенные update-пакеты и `latest.json`. Локально проверена реальная сборка
+macOS: созданы `anion-dl.app.tar.gz` и `anion-dl.app.tar.gz.sig`.
+
+Пара ключей создана локально в игнорируемой `.tauri/`. Публичный ключ встроен в
+конфиг, приватный нужно сохранить вне репозитория и один раз записать в GitHub
+Actions secret `TAURI_SIGNING_PRIVATE_KEY`. До этого release workflow завершится
+с явной ошибкой. Установленная `0.1.1` не может получить updater сама, поэтому
+переход на `0.1.2` будет последней обязательной ручной переустановкой.
 
 ---
 

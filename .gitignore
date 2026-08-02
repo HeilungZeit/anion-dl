@@ -37,6 +37,10 @@ yarn-error.log
 testem.log
 /typings
 
+# Tauri updater signing key. The public key is embedded in tauri.conf.json;
+# the private key must stay local and in GitHub Secrets.
+/.tauri/
+
 # System files
 .DS_Store
 Thumbs.db

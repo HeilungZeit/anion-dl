@@ -109,6 +109,16 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]]; then
+            echo "GitHub secret TAURI_SIGNING_PRIVATE_KEY is not configured" >&2
+            exit 1
+          fi
+
       - name: Build FFmpeg sidecar
         if: matrix.platform != 'windows-latest'
         shell: bash
@@ -123,6 +133,8 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'anion-dl ${{ needs.verify-version.outputs.version }}'
@@ -130,6 +142,7 @@ jobs:
           releaseDraft: false
           prerelease: false
           generateReleaseNotes: true
-          uploadUpdaterJson: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
           releaseAssetNamePattern: ${{ matrix.asset_pattern }}
           args: '--target ${{ matrix.target }} --bundles ${{ matrix.bundles }}'

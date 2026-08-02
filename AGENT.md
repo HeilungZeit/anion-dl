@@ -237,6 +237,32 @@ Kodik», «Плеер Alloha». Сравнение только по вхожд�
 **На `/api` висит рейт-лимитер.** Без клиентского кэша обычная навигация
 упирается в 429.
 
+### Автообновление
+
+Начиная с `0.1.2` приложение проверяет обновления при запуске через
+`tauri-plugin-updater`. Манифест берётся из публичного GitHub Release:
+`https://github.com/HeilungZeit/anion-dl/releases/latest/download/latest.json`.
+Проверка без сети завершается молча; при наличии новой версии показывается
+нативный диалог, после подтверждения пакет устанавливается и приложение
+перезапускается.
+
+Подпись updater-артефактов — не Developer ID и не Windows code signing. Это
+отдельная обязательная проверка целостности Tauri, отключить её нельзя. Публичный
+ключ встроен в `tauri.conf.json`, приватный лежит локально в
+`.tauri/anion-dl.key`; вся `.tauri/` исключена из Git. Ключ нужно отдельно
+сохранить в надёжном месте: при его потере уже установленные копии не смогут
+принять обновления, подписанные новым ключом.
+
+Для CI содержимое приватного ключа должно быть записано в GitHub Actions secret
+`TAURI_SIGNING_PRIVATE_KEY`. Ключ создан без пароля, поэтому
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` в workflow явно пустой. `tauri-action`
+публикует update-артефакты, `.sig` и объединённый `latest.json`.
+
+Updater на Linux использует AppImage. Пользователи `.deb` обновляются вручную
+или через будущий apt-репозиторий. Версия `0.1.1` ещё не содержит updater:
+переход на `0.1.2` для неё также ручной, все следующие обновления — уже
+автоматические.
+
 ---
 
 ## Решения, которые выглядят странно, но осознанны
@@ -304,20 +330,37 @@ cd src-tauri && cargo test --lib
 `src-tauri/tauri.conf.json`:
 
 ```bash
-git tag app-v0.1.1
-git push origin app-v0.1.1
+git tag app-v0.1.2
+git push origin app-v0.1.2
 ```
 
 Workflow `.github/workflows/release.yml` создаёт публичный GitHub Release и
 загружает DMG для macOS ARM/Intel, NSIS EXE для Windows x64, AppImage и DEB для
-Linux x64. Подпись и нотарификация намеренно не настроены.
+Linux x64, а также подписанные updater-артефакты и `latest.json`. Подпись ОС и
+нотарификация намеренно не настроены.
+
+Перед первым updater-релизом один раз добавить локальный ключ в GitHub Secrets:
+
+```bash
+gh auth login
+gh secret set TAURI_SIGNING_PRIVATE_KEY < .tauri/anion-dl.key
+```
+
+Локальная production-упаковка с updater-артефактом также требует ключ:
+
+```bash
+export TAURI_SIGNING_PRIVATE_KEY="$(<.tauri/anion-dl.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+bun run tauri build --bundles app
+```
 
 ---
 
 ## Состояние
 
-Э0–Э7, упаковка macOS и синхронизация UI с фронтом `anion` закрыты, выбор
-качества и защита от рекламного манифеста сделаны.
+Э0–Э7, упаковка macOS и синхронизация UI с фронтом `anion` закрыты; Э8
+(автообновление) реализован локально и ждёт GitHub secret. Выбор качества и
+защита от рекламного манифеста сделаны.
 Приложение работает: каталог, поиск, детали, очередь, скачивание в mp4.
 
 ffmpeg 8.1.2 собирается скриптом из официального архива с проверкой SHA-256.
@@ -368,6 +411,13 @@ GitHub Actions для macOS ARM/Intel, Windows x64 и Linux x64. Workflow соб
 sidecar на целевой ОС, создаёт недрафтовый Release и загружает DMG, NSIS EXE,
 AppImage и DEB со стабильными именами. Версия тега обязана совпадать с
 `tauri.conf.json`.
+
+**Э8 — автообновление. 🟡 Код и артефакты готовы, GitHub secret не загружен.**
+Подключены updater/process, проверка новой версии при запуске, endpoint
+`latest.json`, обязательная подпись update-пакетов и их публикация из workflow.
+Локальная macOS-сборка `0.1.2` создала `.app.tar.gz` и валидную `.sig`. До
+первого релиза нужно добавить `TAURI_SIGNING_PRIVATE_KEY` в GitHub Actions
+Secrets; GitHub CLI на текущей машине пока не авторизован.
 
 Подпись Windows, Developer ID и нотарификация Apple сознательно не делаются:
 пользователь получит системное предупреждение при первом запуске.
