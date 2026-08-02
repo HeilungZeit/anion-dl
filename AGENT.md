@@ -330,8 +330,8 @@ cd src-tauri && cargo test --lib
 `src-tauri/tauri.conf.json`:
 
 ```bash
-git tag app-v0.1.2
-git push origin app-v0.1.2
+git tag app-v0.1.3
+git push origin app-v0.1.3
 ```
 
 Workflow `.github/workflows/release.yml` создаёт публичный GitHub Release и
@@ -412,12 +412,14 @@ sidecar на целевой ОС, создаёт недрафтовый Release 
 AppImage и DEB со стабильными именами. Версия тега обязана совпадать с
 `tauri.conf.json`.
 
-**Э8 — автообновление. 🟡 Код и артефакты готовы, GitHub secret не загружен.**
+**Э8 — автообновление. ✅ Настроено.**
 Подключены updater/process, проверка новой версии при запуске, endpoint
 `latest.json`, обязательная подпись update-пакетов и их публикация из workflow.
-Локальная macOS-сборка `0.1.2` создала `.app.tar.gz` и валидную `.sig`. До
-первого релиза нужно добавить `TAURI_SIGNING_PRIVATE_KEY` в GitHub Actions
-Secrets; GitHub CLI на текущей машине пока не авторизован.
+Приватный ключ добавлен в GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY`.
+Релиз `0.1.2` подтвердил Windows/Linux updater, но macOS отсутствовал в
+`latest.json`, потому что матрица собирала только DMG. Начиная с `0.1.3` macOS
+собирает `app,dmg`: пользователю остаётся DMG, а updater получает подписанный
+`.app.tar.gz`.
 
 Подпись Windows, Developer ID и нотарификация Apple сознательно не делаются:
 пользователь получит системное предупреждение при первом запуске.

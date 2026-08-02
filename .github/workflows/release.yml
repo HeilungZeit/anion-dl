@@ -41,12 +41,12 @@ jobs:
           - label: macOS Apple Silicon
             platform: macos-latest
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             asset_pattern: anion-dl-macos-arm64[ext]
           - label: macOS Intel
             platform: macos-latest
             target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             asset_pattern: anion-dl-macos-x64[ext]
           - label: Linux x64
             platform: ubuntu-22.04
