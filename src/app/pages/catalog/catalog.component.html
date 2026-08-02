@@ -1,0 +1,267 @@
+<div class="page">
+  <header class="catalog-header">
+    <h1>Список аниме</h1>
+  </header>
+
+  @if (genres.value(); as genreData) {
+    <nav class="genre-navigation" aria-label="Жанры аниме">
+      <details>
+        <summary>
+          <span class="genre-navigation__title">Жанры аниме</span>
+          <span class="genre-navigation__count">
+            @if (selectedGenres().size > 0) {
+              Выбрано: {{ selectedGenres().size }} ·
+            }
+            Всего: {{ genreData.genres.length }}
+          </span>
+        </summary>
+
+        <ul>
+          @for (genre of genreData.genres; track genre.value) {
+            <li>
+              <button
+                type="button"
+                [class.genre-navigation__active]="isGenreSelected(genre.value)"
+                [attr.aria-pressed]="isGenreSelected(genre.value)"
+                (click)="toggleGenre(genre.value, true)"
+              >
+                {{ genre.title }}
+              </button>
+            </li>
+          }
+        </ul>
+      </details>
+    </nav>
+  }
+
+  <div class="catalog-container">
+    <section class="catalog-list" aria-live="polite">
+      @if (results.isLoading() || isSearching()) {
+        <div class="state"><tui-loader size="l" /></div>
+      } @else if (results.error()) {
+        <p class="state state--error">Не удалось загрузить каталог: {{ results.error() }}</p>
+      } @else if (pageItems(); as list) {
+        @for (anime of list; track anime.animeId) {
+          <app-anime-card
+            [animeId]="anime.animeId"
+            [title]="anime.title"
+            [poster]="anime.poster"
+            [year]="anime.year"
+            [type]="anime.type.name"
+            [statusTitle]="anime.animeStatus.title"
+            [statusAlias]="anime.animeStatus.alias"
+            [rating]="anime.rating.average"
+            [episodesAired]="anime.episodes?.aired"
+            [episodesCount]="anime.episodes?.count"
+            [genres]="anime.genres"
+            [wide]="true"
+          />
+        } @empty {
+          <div class="state state--empty">
+            <strong>Ничего не найдено</strong>
+            <span>Попробуйте изменить запрос или фильтры</span>
+          </div>
+        }
+
+        @if (list.length > 0 && (page() > 1 || hasNextPage())) {
+          <nav class="pagination" aria-label="Страницы каталога">
+            <button
+              type="button"
+              class="pagination__arrow"
+              [disabled]="page() === 1 || results.isLoading()"
+              aria-label="Предыдущая страница"
+              (click)="goToPage(page() - 1)"
+            >
+              ←
+            </button>
+
+            @if (page() > 2) {
+              <button type="button" (click)="goToPage(1)">1</button>
+              @if (page() > 3) {
+                <span class="pagination__ellipsis">…</span>
+              }
+            }
+
+            @if (page() > 1) {
+              <button type="button" (click)="goToPage(page() - 1)">
+                {{ page() - 1 }}
+              </button>
+            }
+
+            <span class="pagination__current" aria-current="page">{{ page() }}</span>
+
+            @if (hasNextPage()) {
+              <button type="button" (click)="goToPage(page() + 1)">
+                {{ page() + 1 }}
+              </button>
+            }
+
+            <button
+              type="button"
+              class="pagination__arrow"
+              [disabled]="!hasNextPage() || results.isLoading()"
+              aria-label="Следующая страница"
+              (click)="goToPage(page() + 1)"
+            >
+              →
+            </button>
+          </nav>
+        }
+      }
+    </section>
+
+    <aside class="catalog-filters" aria-label="Фильтры каталога">
+      <header class="filter-header">
+        <h2>Фильтры</h2>
+        <tui-icon icon="@tui.sliders-horizontal" />
+      </header>
+
+      <form (submit)="$event.preventDefault(); applyFilters()">
+        <label class="filter-field">
+          <span>Название</span>
+          <tui-textfield class="filter-control" tuiTextfieldSize="m" [tuiTextfieldCleaner]="false">
+            <input
+              tuiTextfield
+              placeholder="Найти аниме"
+              [ngModel]="draft()"
+              (ngModelChange)="onInput($event)"
+              name="search"
+            />
+          </tui-textfield>
+        </label>
+
+        @if (genres.value(); as genreData) {
+          <div class="filter-field">
+            <span>Выберите жанры</span>
+            <details class="genre-select">
+              <summary>
+                <span>
+                  {{ selectedGenres().size ? 'Выбрано: ' + selectedGenres().size : 'Жанры' }}
+                </span>
+              </summary>
+              <ul>
+                @for (genre of genreData.genres; track genre.value) {
+                  <li>
+                    <label>
+                      <input
+                        type="checkbox"
+                        [checked]="isGenreSelected(genre.value)"
+                        (change)="toggleGenre(genre.value)"
+                      />
+                      <span aria-hidden="true"></span>
+                      {{ genre.title }}
+                    </label>
+                  </li>
+                }
+              </ul>
+            </details>
+          </div>
+        }
+
+        <label class="filter-field">
+          <span>Тип аниме</span>
+          <tui-textfield
+            class="filter-control"
+            tuiChevron
+            tuiTextfieldSize="m"
+            [stringify]="stringifyOption"
+            [tuiTextfieldCleaner]="true"
+          >
+            <input
+              tuiSelect
+              placeholder="Все типы"
+              [ngModel]="selectedType()"
+              (ngModelChange)="selectedType.set($event)"
+              name="type"
+            />
+            <tui-data-list-wrapper
+              *tuiDropdown
+              [items]="typeOptions"
+            />
+          </tui-textfield>
+        </label>
+
+        <label class="filter-field">
+          <span>Статус аниме</span>
+          <tui-textfield
+            class="filter-control"
+            tuiChevron
+            tuiTextfieldSize="m"
+            [stringify]="stringifyOption"
+            [tuiTextfieldCleaner]="true"
+          >
+            <input
+              tuiSelect
+              placeholder="Все статусы"
+              [ngModel]="selectedStatus()"
+              (ngModelChange)="selectedStatus.set($event)"
+              name="status"
+            />
+            <tui-data-list-wrapper
+              *tuiDropdown
+              [items]="statusOptions"
+            />
+          </tui-textfield>
+        </label>
+
+        <div class="filter-field">
+          <span>Год</span>
+          <div class="year-row">
+            <label>
+              <span>От</span>
+              <input
+                type="number"
+                min="1965"
+                [max]="nextYear"
+                [ngModel]="yearFrom()"
+                (ngModelChange)="yearFrom.set($event)"
+                name="yearFrom"
+              />
+            </label>
+            <label>
+              <span>До</span>
+              <input
+                type="number"
+                min="1965"
+                [max]="nextYear"
+                [ngModel]="yearTo()"
+                (ngModelChange)="yearTo.set($event)"
+                name="yearTo"
+              />
+            </label>
+          </div>
+        </div>
+
+        <label class="filter-field">
+          <span>Сортировать по</span>
+          <tui-textfield
+            class="filter-control"
+            tuiChevron
+            tuiTextfieldSize="m"
+            [stringify]="stringifyOption"
+          >
+            <input
+              tuiSelect
+              [ngModel]="selectedSort()"
+              (ngModelChange)="selectedSort.set($event)"
+              name="sort"
+            />
+            <tui-data-list-wrapper
+              *tuiDropdown
+              [items]="sortOptions"
+            />
+          </tui-textfield>
+        </label>
+
+        <div class="filter-actions">
+          <button class="filter-submit" type="submit">
+            Поиск <tui-icon icon="@tui.search" />
+          </button>
+          <button class="filter-reset" type="button" (click)="resetFilters()">
+            Сбросить
+          </button>
+        </div>
+      </form>
+    </aside>
+  </div>
+</div>

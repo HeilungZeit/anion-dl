@@ -1,0 +1,184 @@
+@if (anime.isLoading()) {
+  <tui-loader size="l" />
+} @else if (anime.error()) {
+  <p class="error">Не удалось загрузить аниме: {{ anime.error() }}</p>
+} @else if (anime.value(); as data) {
+  <div class="page">
+    <header class="head">
+      <div class="head__poster-wrap">
+        <img class="head__poster" [src]="data.poster.big" [alt]="data.title" />
+        <span class="head__status" [class.head__status--released]="data.animeStatus.alias === 'released'">
+          {{ data.animeStatus.title }}
+        </span>
+      </div>
+
+      <div class="head__body">
+        <span class="head__eyebrow">Аниме {{ data.year }}</span>
+        <h1 class="head__title" data-selectable="true">{{ data.title }}</h1>
+
+        <div class="head__meta">
+          <span><small>Тип</small><strong>{{ data.type.name }}</strong></span>
+          <i aria-hidden="true"></i>
+          <span><small>Эпизоды</small><strong>{{ data.episodes?.aired }} из {{ data.episodes?.count }}</strong></span>
+          <i aria-hidden="true"></i>
+          <span><small>Оценка</small><strong class="head__rating">★ {{ data.rating.average.toFixed(1) }}</strong></span>
+          @if (data.minAge.titleLong) {
+            <i aria-hidden="true"></i>
+            <span><small>Возраст</small><strong>{{ data.minAge.titleLong }}</strong></span>
+          }
+        </div>
+
+        <p class="head__description">{{ data.description }}</p>
+
+        @if (data.genres.length > 0) {
+          <div class="head__genres">
+            @for (genre of data.genres; track genre.id) {
+              <span>{{ genre.title }}</span>
+            }
+          </div>
+        }
+      </div>
+    </header>
+
+    <section class="download">
+      <header class="download__head">
+        <div>
+          <span class="download__eyebrow">Офлайн-просмотр</span>
+          <h2>Скачивание серий</h2>
+          <p>Выберите озвучку, качество и нужные эпизоды</p>
+        </div>
+        @if (episodes().length > 0) {
+          <span class="download__count">{{ episodes().length }}</span>
+        }
+      </header>
+
+      @if (dubbings().length === 0) {
+        <div class="empty">Для этого аниме нет источника Kodik — скачать нечем.</div>
+      } @else {
+        <div class="download__controls">
+          <label class="download__field">
+            <span class="download__label">Озвучка</span>
+
+            <tui-textfield
+              class="download__select"
+              tuiChevron
+              tuiTextfieldSize="m"
+            >
+              <input
+                tuiSelect
+                [ngModel]="selectedDubbing()"
+                (ngModelChange)="selectedDubbing.set($event)"
+              />
+              <tui-data-list-wrapper *tuiDropdown [items]="dubbings()" />
+            </tui-textfield>
+          </label>
+
+          <label class="download__field download__field--quality">
+            <span class="download__label">Качество</span>
+
+            <tui-textfield
+              class="download__select"
+              tuiChevron
+              tuiTextfieldSize="m"
+              [stringify]="stringifyQuality"
+            >
+              <input
+                tuiSelect
+                [ngModel]="quality()"
+                (ngModelChange)="changeQuality($event)"
+              />
+              <tui-data-list-wrapper
+                *tuiDropdown
+                [items]="qualities"
+              />
+            </tui-textfield>
+          </label>
+
+          <label class="download__field download__field--dir">
+            <span class="download__label">Папка назначения</span>
+
+            <button type="button" class="download__dir" (click)="chooseDir()">
+              <span>{{ outputDir() || 'Выбрать папку…' }}</span>
+              <b>Изменить</b>
+            </button>
+          </label>
+        </div>
+
+        @if (lastError()) {
+          <p class="probe probe--failed">{{ lastError() }}</p>
+        }
+
+        <div class="download__bulk">
+          <button
+            type="button"
+            class="button button--primary"
+            [disabled]="!outputDir() || !hasSelection()"
+            (click)="downloadSelected()"
+          >
+            Скачать выбранные
+            <span>{{ selected().size }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="button"
+            [disabled]="!outputDir()"
+            (click)="downloadAll()"
+          >
+            Скачать все серии
+          </button>
+        </div>
+
+        <ul class="episodes">
+          @for (episode of episodes(); track episode.videoId) {
+            <li
+              class="episodes__item"
+              [class.episodes__item--selected]="isSelected(episode)"
+              [class.episodes__item--busy]="isBusy(episode)"
+            >
+              <label class="episodes__check">
+                <input
+                  type="checkbox"
+                  [checked]="isSelected(episode)"
+                  (change)="toggle(episode)"
+                />
+                <span aria-hidden="true"></span>
+                <strong>Серия {{ episode.number }}</strong>
+              </label>
+
+              <span class="episodes__meta">{{ selectedDubbing() }}</span>
+
+              @if (percent(episode) > 0) {
+                <span class="episodes__progress">
+                  <span class="episodes__bar">
+                    <span
+                      class="episodes__bar-fill"
+                      [style.width.%]="percent(episode)"
+                    ></span>
+                  </span>
+                  <small>{{ percent(episode) }}%</small>
+                </span>
+              }
+
+              @if (isFailed(episode)) {
+                <span class="episode-error">
+                  Ошибка · <a routerLink="/downloads">Подробнее</a>
+                </span>
+              } @else {
+                <button
+                  type="button"
+                  class="episode-action"
+                  [class.episode-action--active]="isBusy(episode)"
+                  [disabled]="!outputDir() || isBusy(episode)"
+                  (click)="download(episode)"
+                >
+                  {{ statusOf(episode) || 'Скачать' }}
+                </button>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  </div>
+}

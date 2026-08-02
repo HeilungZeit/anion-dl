@@ -1,0 +1,212 @@
+// Именно block-size, а не min-block-size: с min-высотой .shell растёт вслед за
+// контентом, .content никогда не переполняется и внутреннего скролла не
+// возникает вовсе.
+.shell {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  inline-size: 100%;
+}
+
+.nav {
+  position: relative;
+  z-index: 100;
+  flex: 0 0 60px;
+  block-size: 60px;
+  border-block-end: 1px solid var(--anion-surface-4);
+  background: rgb(18 18 18 / 86%);
+  backdrop-filter: blur(14px) saturate(130%);
+}
+
+.nav__inner {
+  display: flex;
+  block-size: 100%;
+  inline-size: 100%;
+  max-inline-size: var(--anion-container-max);
+  align-items: center;
+  gap: var(--anion-space-24);
+  margin-inline: auto;
+  padding-inline: var(--anion-space-24);
+  box-sizing: border-box;
+}
+
+.brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  border-radius: var(--anion-radius-md);
+  color: var(--anion-text-primary);
+  font-size: 19px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  outline: none;
+  text-decoration: none;
+
+  img {
+    inline-size: 40px;
+    block-size: 40px;
+    object-fit: contain;
+    transition: filter var(--anion-duration-base) ease,
+      transform var(--anion-duration-base) ease;
+  }
+
+  &:hover img,
+  &:focus-visible img {
+    filter: drop-shadow(0 0 8px var(--anion-accent-a45));
+    transform: translateY(-1px) scale(1.03);
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+.brand__suffix {
+  margin-inline-start: 2px;
+  color: var(--anion-accent-text-muted);
+}
+
+.nav__links {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-4);
+}
+
+.nav__link {
+  position: relative;
+  display: inline-flex;
+  block-size: 38px;
+  align-items: center;
+  padding-inline: var(--anion-space-12);
+  border-radius: 9px;
+  color: rgb(255 255 255 / 66%);
+  font-size: var(--anion-font-size-14);
+  font-weight: 550;
+  outline: none;
+  text-decoration: none;
+  transition: background-color var(--anion-duration-base) ease,
+    color var(--anion-duration-base) ease;
+
+  &::after {
+    position: absolute;
+    inset-inline: var(--anion-space-12);
+    inset-block-end: 3px;
+    block-size: 2px;
+    border-radius: var(--anion-radius-pill);
+    background: var(--anion-accent);
+    content: '';
+    opacity: 0;
+    transform: scaleX(0.4);
+    transition: opacity var(--anion-duration-base) ease,
+      transform var(--anion-duration-base) ease;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-surface-3);
+    color: var(--anion-text-on-brand);
+  }
+
+  &--active {
+    background: var(--anion-accent-a15);
+    color: var(--anion-text-on-brand);
+
+    &::after {
+      opacity: 1;
+      transform: scaleX(1);
+    }
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring-inset);
+  }
+}
+
+.nav__catalog {
+  display: inline-flex;
+  inline-size: clamp(180px, 18vw, 250px);
+  block-size: 40px;
+  align-items: center;
+  gap: 9px;
+  margin-inline-start: auto;
+  padding: 0 var(--anion-space-8) 0 var(--anion-space-12);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-md);
+  background: var(--anion-surface-2);
+  box-sizing: border-box;
+  color: rgb(255 255 255 / 58%);
+  font-size: var(--anion-font-size-13);
+  outline: none;
+  text-decoration: none;
+  transition: background-color var(--anion-duration-base) ease,
+    border-color var(--anion-duration-base) ease,
+    color var(--anion-duration-base) ease;
+
+  tui-icon {
+    font-size: var(--anion-icon-16);
+  }
+
+  span {
+    flex: 1;
+  }
+
+  kbd {
+    display: grid;
+    inline-size: 23px;
+    block-size: 23px;
+    place-items: center;
+    border: 1px solid var(--anion-border);
+    border-radius: var(--anion-radius-xs);
+    background: var(--anion-surface-3);
+    color: var(--anion-text-tertiary);
+    font: inherit;
+  }
+
+  &:hover,
+  &:focus-visible,
+  &--active {
+    border-color: var(--anion-accent-a60);
+    background: var(--anion-accent-a10);
+    color: var(--anion-text-on-brand);
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+// Скроллится контент, а не страница: body переведён в overflow: hidden,
+// иначе окно Tauri показывает второй скроллбар поверх собственного.
+.content {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--anion-space-24);
+  background:
+    radial-gradient(circle at 90% -10%, var(--anion-accent-a10), transparent 32rem),
+    var(--anion-bg-base);
+}
+
+@media (max-width: 760px) {
+  .nav__inner {
+    gap: var(--anion-space-12);
+    padding-inline: var(--anion-space-16);
+  }
+
+  .brand > span,
+  .nav__catalog span,
+  .nav__catalog kbd {
+    display: none;
+  }
+
+  .nav__catalog {
+    inline-size: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .content {
+    padding: var(--anion-space-16);
+  }
+}

@@ -1,0 +1,41 @@
+@if (feed.isLoading()) {
+  <tui-loader size="l" />
+} @else if (feed.error()) {
+  <p class="error">Не удалось загрузить фид: {{ feed.error() }}</p>
+} @else if (feed.value(); as data) {
+  <div class="page">
+    <section class="section">
+      <header class="section__header">
+        <div class="section__heading">
+          <span class="section__accent" aria-hidden="true"></span>
+          <div>
+            <h1>Аниме сезона</h1>
+            <p>Свежие сериалы, которые выходят прямо сейчас</p>
+          </div>
+        </div>
+
+        <a class="section__link" routerLink="/catalog">
+          В каталог <span aria-hidden="true">→</span>
+        </a>
+      </header>
+
+      <div class="grid">
+        @for (anime of data.seasonAnime; track anime.animeId) {
+          <app-anime-card
+            [animeId]="anime.animeId"
+            [title]="anime.title"
+            [poster]="anime.poster"
+            [year]="anime.year"
+            [type]="anime.type.shortname || anime.type.name"
+            [statusTitle]="anime.animeStatus.title"
+            [statusAlias]="anime.animeStatus.alias"
+            [rating]="anime.rating.average"
+            [episodesAired]="anime.episodes?.aired"
+            [episodesCount]="anime.episodes?.count"
+          />
+        }
+      </div>
+    </section>
+
+  </div>
+}

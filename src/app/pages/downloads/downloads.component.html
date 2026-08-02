@@ -1,0 +1,95 @@
+<div class="page">
+  <header class="head">
+    <div class="head__heading">
+      <span class="head__accent" aria-hidden="true"></span>
+      <div>
+        <span class="head__eyebrow">Офлайн-библиотека</span>
+        <h1>Загрузки</h1>
+        <p>Очередь и готовые эпизоды</p>
+      </div>
+    </div>
+
+    @if (tasks().length > 0) {
+      <button type="button" class="action action--quiet" (click)="clearFinished()">
+        Очистить завершённые
+      </button>
+    }
+  </header>
+
+  @if (tasks().length === 0) {
+    <div class="empty">
+      <span class="empty__mark" aria-hidden="true">↓</span>
+      <strong>Очередь пока пуста</strong>
+      <p>Откройте аниме в каталоге и выберите серии для загрузки.</p>
+      <a routerLink="/catalog">Перейти в каталог</a>
+    </div>
+  } @else {
+    @if (pending().length > 0) {
+      <div class="queue-note">
+        <span class="queue-note__pulse" aria-hidden="true"></span>
+        <span>
+          <strong>В работе: {{ pending().length }}</strong>
+          Загрузки идут по одной, чтобы соединение оставалось стабильным.
+        </span>
+      </div>
+    }
+
+    <ul class="tasks">
+      @for (task of tasks(); track task.id) {
+        <li
+          class="tasks__item"
+          [class.tasks__item--failed]="task.status === 'failed'"
+          [class.tasks__item--done]="task.status === 'done'"
+          [class.tasks__item--active]="task.status === 'downloading' || task.status === 'resolving'"
+        >
+          <div class="tasks__icon" aria-hidden="true">
+            @switch (task.status) {
+              @case ('done') { ✓ }
+              @case ('failed') { ! }
+              @case ('cancelled') { × }
+              @default { ↓ }
+            }
+          </div>
+
+          <div class="tasks__body">
+            <div class="tasks__main">
+              <div class="tasks__identity">
+                <strong class="tasks__title">{{ task.title }}</strong>
+                <span class="tasks__meta">Серия {{ task.episode }} · {{ task.dubbing }}</span>
+              </div>
+
+              <span class="tasks__status">{{ label(task) }}</span>
+
+              @if (canCancel(task)) {
+                <button type="button" class="action" (click)="cancel(task)">
+                  Отменить
+                </button>
+              } @else if (task.status === 'done') {
+                <button type="button" class="action" (click)="reveal(task)">
+                  Показать в Finder
+                </button>
+              } @else {
+                <button type="button" class="action" (click)="retry(task)">
+                  Повторить
+                </button>
+              }
+            </div>
+
+            @if (task.warning) {
+              <span class="tasks__warning">{{ task.warning }}</span>
+            }
+
+            <span class="tasks__bar">
+              <span
+                class="tasks__bar-fill"
+                [class.tasks__bar-fill--done]="task.status === 'done'"
+                [class.tasks__bar-fill--failed]="task.status === 'failed'"
+                [style.width.%]="percent(task)"
+              ></span>
+            </span>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>

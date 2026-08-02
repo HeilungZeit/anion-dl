@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "anion-dl-web",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "start"],
+      "port": 1420
+    }
+  ]
+}

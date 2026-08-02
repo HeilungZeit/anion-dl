@@ -1,0 +1,107 @@
+:host {
+  display: block;
+}
+
+.page {
+  inline-size: 100%;
+  max-inline-size: var(--anion-container-max);
+  margin-inline: auto;
+}
+
+.section__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--anion-space-16);
+  margin-block-end: var(--anion-space-24);
+  padding-block-end: var(--anion-space-20);
+  border-block-end: 1px solid var(--anion-border);
+}
+
+.section__heading {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--anion-space-16);
+
+  h1 {
+    margin: 0;
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+  }
+
+  p {
+    margin: var(--anion-space-6) 0 0;
+    color: var(--anion-text-secondary);
+    font-size: var(--anion-font-size-14);
+  }
+}
+
+.section__accent {
+  inline-size: 4px;
+  block-size: 56px;
+  flex: 0 0 auto;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-accent);
+  box-shadow: 0 0 16px var(--anion-accent-a45);
+}
+
+.section__link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--anion-space-6);
+  padding: var(--anion-space-8) var(--anion-space-12);
+  border-radius: var(--anion-radius-sm);
+  color: var(--anion-accent-text);
+  font-size: var(--anion-font-size-14);
+  font-weight: 500;
+  outline: none;
+  text-decoration: none;
+  transition: background var(--anion-duration-base) ease,
+    color var(--anion-duration-base) ease;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-accent-a15);
+    color: var(--anion-accent-text-muted);
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--anion-space-20) var(--anion-space-12);
+}
+
+.error {
+  color: var(--anion-negative-text);
+}
+
+@media (max-width: 560px) {
+  .section__header {
+    align-items: center;
+  }
+
+  .section__heading {
+    gap: var(--anion-space-12);
+
+    h1 {
+      font-size: var(--anion-font-size-20);
+    }
+
+    p {
+      font-size: var(--anion-font-size-12);
+    }
+  }
+
+  .section__accent {
+    block-size: 44px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  }
+}

@@ -1,0 +1,49 @@
+<tui-root tuiTheme="dark">
+  <div class="shell">
+    <nav class="nav">
+      <div class="nav__inner">
+        <a class="brand" routerLink="/" aria-label="anion-dl — главная">
+          <img src="assets/app-icon.png" alt="" />
+          <span>anion<span class="brand__suffix">dl</span></span>
+        </a>
+
+        <div class="nav__links">
+          <a
+            class="nav__link"
+            routerLink="/"
+            routerLinkActive="nav__link--active"
+            [routerLinkActiveOptions]="{ exact: true }"
+            >Главная</a
+          >
+          <a
+            class="nav__link"
+            routerLink="/catalog"
+            routerLinkActive="nav__link--active"
+            >Каталог</a
+          >
+          <a
+            class="nav__link"
+            routerLink="/downloads"
+            routerLinkActive="nav__link--active"
+            >Загрузки</a
+          >
+        </div>
+
+        <a
+          class="nav__catalog"
+          routerLink="/catalog"
+          routerLinkActive="nav__catalog--active"
+          aria-label="Найти аниме"
+        >
+          <tui-icon icon="@tui.search" />
+          <span>Найти аниме</span>
+          <kbd>/</kbd>
+        </a>
+      </div>
+    </nav>
+
+    <main class="content">
+      <router-outlet />
+    </main>
+  </div>
+</tui-root>

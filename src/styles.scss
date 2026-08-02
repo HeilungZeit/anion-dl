@@ -1,0 +1,152 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  block-size: 100%;
+}
+
+:root {
+  --anion-brand: #1976d2;
+  --anion-bg-base: #121212;
+  --anion-bg-elevated: #1c1b1b;
+  --anion-bg-media: #202020;
+  --anion-surface-1: rgb(255 255 255 / 2%);
+  --anion-surface-2: rgb(255 255 255 / 4%);
+  --anion-surface-3: rgb(255 255 255 / 6%);
+  --anion-surface-4: rgb(255 255 255 / 8%);
+  --anion-surface-5: rgb(255 255 255 / 10%);
+  --anion-border-subtle: rgb(255 255 255 / 6%);
+  --anion-border: rgb(255 255 255 / 10%);
+  --anion-border-strong: rgb(255 255 255 / 24%);
+  --anion-text-primary: #e5e7eb;
+  --anion-text-secondary: rgb(255 255 255 / 64%);
+  --anion-text-tertiary: rgb(255 255 255 / 42%);
+  --anion-text-disabled: rgb(255 255 255 / 24%);
+  --anion-text-on-brand: #fff;
+  --anion-accent: #1976d2;
+  --anion-accent-hover: #2b8ae0;
+  --anion-accent-active: #1565c0;
+  --anion-accent-a10: rgb(25 118 210 / 10%);
+  --anion-accent-a15: rgb(25 118 210 / 15%);
+  --anion-accent-a25: rgb(25 118 210 / 25%);
+  --anion-accent-a45: rgb(25 118 210 / 45%);
+  --anion-accent-a60: rgb(25 118 210 / 60%);
+  --anion-accent-text: #69aef0;
+  --anion-accent-text-muted: #8bc8f8;
+  --anion-positive: #22c55e;
+  --anion-positive-pale: rgb(34 197 94 / 15%);
+  --anion-warning: #ffc700;
+  --anion-warning-pale: rgb(255 199 0 / 16%);
+  --anion-negative: #ef4444;
+  --anion-negative-text: #f87171;
+  --anion-negative-pale: rgb(239 68 68 / 15%);
+  --anion-status-anons-bg: rgb(252 211 77 / 90%);
+  --anion-status-anons-fg: #451a03;
+  --anion-status-ongoing-bg: rgb(74 222 128 / 90%);
+  --anion-status-ongoing-fg: #062a16;
+  --anion-status-released-bg: rgb(96 165 250 / 90%);
+  --anion-status-released-fg: #172554;
+  --anion-radius-xs: 6px;
+  --anion-radius-sm: 8px;
+  --anion-radius-md: 10px;
+  --anion-radius-lg: 12px;
+  --anion-radius-xl: 14px;
+  --anion-radius-2xl: 16px;
+  --anion-radius-pill: 999px;
+  --anion-space-2: 2px;
+  --anion-space-4: 4px;
+  --anion-space-6: 6px;
+  --anion-space-8: 8px;
+  --anion-space-10: 10px;
+  --anion-space-12: 12px;
+  --anion-space-16: 16px;
+  --anion-space-20: 20px;
+  --anion-space-24: 24px;
+  --anion-space-32: 32px;
+  --anion-space-40: 40px;
+  --anion-font-size-10: 10px;
+  --anion-font-size-11: 11px;
+  --anion-font-size-12: 12px;
+  --anion-font-size-13: 13px;
+  --anion-font-size-14: 14px;
+  --anion-font-size-16: 16px;
+  --anion-font-size-18: 18px;
+  --anion-font-size-20: 20px;
+  --anion-font-size-24: 24px;
+  --anion-font-size-28: 28px;
+  --anion-icon-16: 16px;
+  --anion-icon-18: 18px;
+  --anion-duration-fast: 160ms;
+  --anion-duration-base: 180ms;
+  --anion-duration-slow: 300ms;
+  --anion-container-max: 1670px;
+  --anion-shadow-card: 0 4px 20px rgb(0 0 0 / 20%);
+  --anion-shadow-card-hover: 0 12px 32px rgb(0 0 0 / 28%);
+  --anion-shadow-accent-glow: 0 6px 16px rgb(25 118 210 / 28%);
+  --anion-focus-ring: 0 0 0 2px var(--anion-accent-a45);
+  --anion-focus-ring-inset: inset 0 0 0 2px var(--anion-accent-a45);
+}
+
+tui-root[tuiTheme='dark'] {
+  --tui-background-base: var(--anion-bg-base);
+  --tui-text-primary: var(--anion-text-primary);
+  --tui-text-secondary: var(--anion-text-secondary);
+  --tui-text-primary-on-accent-1: var(--anion-text-primary);
+}
+
+// Высота должна быть определённой на всей цепочке до скролл-контейнера,
+// иначе внутренний overflow: auto никогда не переполнится и скролла не будет.
+//
+// body — флекс-контейнер намеренно: tui-root объявлен в Taiga как `flex: 1`,
+// и без флекс-родителя это правило не работает, tui-root остаётся auto-высоты.
+// Дальше .t-root-content (block-size: 100%) получает определённую высоту,
+// и .content в app.component.scss наконец становится настоящим скроллером.
+//
+// overflow: hidden здесь только страховка от второго скроллбара у окна. Сам по
+// себе он НЕ решает задачу и на элементе-скроллере вреден: он глушит колесо и
+// трекпад, но не программный scrollTop — а кастомный скроллбар Taiga
+// (tui-scroll-controls) двигает контейнер именно программно. Получается
+// «ползунок тащится, колесо мертво».
+body {
+  display: flex;
+  overflow: hidden;
+  background: var(--anion-bg-base);
+  color: var(--anion-text-primary);
+  font-family: 'Manrope', system-ui, sans-serif;
+}
+
+// Между body и tui-root стоит app-root, и по умолчанию это display: block без
+// собственной высоты — именно здесь цепочка и рвалась. Пока он не флекс-контейнер,
+// объявленный в Taiga `flex: 1` на tui-root не за что зацепиться.
+app-root {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+}
+
+// Отключаем нативное выделение текста и контекстное меню-ощущение веб-страницы,
+// но оставляем выделение там, где оно осмысленно (пути к файлам, названия).
+:root {
+  user-select: none;
+}
+
+input,
+textarea,
+[data-selectable='true'] {
+  user-select: text;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--anion-accent-a45);
+}
