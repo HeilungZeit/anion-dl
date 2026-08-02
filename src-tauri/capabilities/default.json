@@ -23,7 +23,6 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "http://localhost:8080/*" },
         { "url": "https://anion.online/*" }
       ]
     }

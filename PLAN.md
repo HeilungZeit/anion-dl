@@ -261,8 +261,8 @@ TypeScript 6.0, `less` для темы Taiga. Подключены плагин�
 
 **Э1 — данные. ✅ Написано, в окне не проверено.** `AnimeService` поверх
 `tauri-plugin-http` с дедупликацией запросов и кэшем, типы TS по Go-DTO,
-карточка аниме, три экрана. Целимся в локальный бэк
-(`http://localhost:8080/api`).
+карточка аниме, три экрана. Используется публичный бэк
+(`https://anion.online/api`).
 *Осталось проверить: каталог листается, детали открываются, список серий виден.*
 
 **Э2 — resolver. ✅ Написано, вживую не проверено.** Rust-команда
@@ -410,11 +410,12 @@ H.264 High@4.1 yuv420p + AAC-LC 44.1 стерео — совместимость
 «показать в Finder», обработка «серия недоступна в Kodik», защита от рекламного
 манифеста, собственная иконка и `.dmg`.
 
-**Э6 — статическая LGPL-сборка ffmpeg. ✅ Сделано.**
+**Э6 — минимальная LGPL-сборка ffmpeg. ✅ Сделано.**
 
 [scripts/fetch-ffmpeg.sh](scripts/fetch-ffmpeg.sh) собирает официальный FFmpeg
-8.1.2 с запиненным SHA-256 и `--disable-everything`. GPL, x264/x265 и сторонних
-библиотек нет; HTTPS работает через системный Secure Transport.
+8.1.2 с запиненным SHA-256 и `--disable-everything`. GPL и x264/x265 нет;
+HTTPS работает через Secure Transport на macOS, SChannel на Windows и OpenSSL
+на Linux.
 
 Минимальный состав: декодеры и парсеры `aac,h264`, демуксеры `hls,mpegts`,
 муксер `mp4`, протоколы `file,http,https,tcp,tls,pipe`, BSF
@@ -438,6 +439,15 @@ Tauri ad-hoc подписывает приложение и ffmpeg с hardened r
 Ad-hoc подпись не заменяет Developer ID и нотарификацию — они остаются
 отдельным внешним шагом, если образ нужно распространять без предупреждений
 Gatekeeper.
+
+**Э7 — GitHub Releases для desktop-платформ. ✅ Настроено.**
+
+`.github/workflows/release.yml` запускается на теге `app-v*`, проверяет его
+совпадение с версией Tauri, нативно собирает LGPL sidecar и публикует DMG для
+macOS ARM/Intel, NSIS EXE для Windows x64, AppImage и DEB для Linux x64.
+У артефактов стабильные имена без версии, поэтому ссылки через
+`releases/latest/download/...` не меняются. Подпись Windows и Developer ID для
+macOS сознательно не настраиваются.
 
 ---
 

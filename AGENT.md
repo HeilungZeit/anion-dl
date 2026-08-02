@@ -76,7 +76,7 @@ Angular 22 (zoneless, **без SSR**) + Taiga UI 5.9 + Tauri v2. Пакетны�
 В `videos[]` у каждой серии есть `iframeUrl` — прямой URL плеера, плюс
 `data.player`, `data.dubbing` и `skips` с таймингами опенинга.
 
-База API — `http://localhost:8080/api` (см. `src/app/api/api.config.ts`).
+База API — `https://anion.online/api` (см. `src/app/api/api.config.ts`).
 Разрешённые хосты перечислены в `src-tauri/capabilities/default.json`; запрос на
 неразрешённый origin плагин отклонит.
 
@@ -286,29 +286,45 @@ cd src-tauri && cargo run --example resolve_probe -- "<URL плеера>" 720
 cd src-tauri && cargo test --lib
 ```
 
-Собрать запиненный LGPL ffmpeg из официальных исходников (имя с триплетом
-делает сам скрипт):
+Собрать запиненный LGPL ffmpeg из официальных исходников для текущей платформы
+(имя с триплетом делает сам скрипт):
 
 ```bash
 ./scripts/fetch-ffmpeg.sh
 ```
 
-Для сборки без скачивания можно передать путь к архиву
-`ffmpeg-8.1.2.tar.xz` первым аргументом.
+Первым аргументом можно передать target triple. Для сборки без скачивания путь
+к архиву `ffmpeg-8.1.2.tar.xz` передаётся вторым аргументом:
+
+```bash
+./scripts/fetch-ffmpeg.sh x86_64-unknown-linux-gnu /path/to/ffmpeg-8.1.2.tar.xz
+```
+
+Публикация релиза запускается только версионным тегом, совпадающим с версией в
+`src-tauri/tauri.conf.json`:
+
+```bash
+git tag app-v0.1.0
+git push origin app-v0.1.0
+```
+
+Workflow `.github/workflows/release.yml` создаёт публичный GitHub Release и
+загружает DMG для macOS ARM/Intel, NSIS EXE для Windows x64, AppImage и DEB для
+Linux x64. Подпись и нотарификация намеренно не настроены.
 
 ---
 
 ## Состояние
 
-Э0–Э6, упаковка macOS и синхронизация UI с фронтом `anion` закрыты, выбор
+Э0–Э7, упаковка macOS и синхронизация UI с фронтом `anion` закрыты, выбор
 качества и защита от рекламного манифеста сделаны.
 Приложение работает: каталог, поиск, детали, очередь, скачивание в mp4.
 
 ffmpeg 8.1.2 собирается скриптом из официального архива с проверкой SHA-256.
-Сборка LGPL, 2.4 МБ, без энкодеров и внешних библиотек; TLS идёт через системный
-Secure Transport. В `.app` у sidecar только `/usr/lib` и системные Frameworks,
-ссылок на Homebrew нет. Проверены локальный HLS и 25 секунд живой серии Kodik:
-H.264 High 1280×720 + AAC-LC, `moov` в начале файла.
+Сборка LGPL без энкодеров; TLS идёт через Secure Transport на macOS, SChannel
+на Windows и OpenSSL на Linux. На macOS sidecar весит 2,4–2,6 МБ и зависит
+только от системных библиотек. Проверены обе macOS-архитектуры, локальный HLS и
+25 секунд живой серии Kodik: H.264 High 1280×720 + AAC-LC, `moov` в начале.
 
 Собственная иконка хранится в `src-tauri/icons/app-icon.png`; остальные размеры
 генерируются через `bun run tauri icon src-tauri/icons/app-icon.png`.
@@ -322,7 +338,7 @@ DMG собирается для arm64, приложение и ffmpeg подпи
 
 ## Дорожная карта
 
-**Э6 — статическая LGPL-сборка ffmpeg. ✅ Сделано.**
+**Э6 — минимальная LGPL-сборка ffmpeg. ✅ Сделано.**
 
 Автономный sidecar собран из FFmpeg 8.1.2 с `--disable-everything`, без
 `--enable-gpl`, x264/x265 и сторонних dylib.
@@ -342,8 +358,14 @@ DMG собирается для arm64, приложение и ffmpeg подпи
 `hdiutil verify`; внутри есть ссылка на `/Applications`, корректно подписанные
 app/sidecar и тот же автономный LGPL ffmpeg без Homebrew-зависимостей.
 
-Следующий внешний шаг нужен только для распространения без предупреждений
-Gatekeeper: сертификат Developer ID Application и нотарификация Apple.
+**Э7 — GitHub Releases. ✅ Настроено.** Тег `app-v<версия>` запускает матрицу
+GitHub Actions для macOS ARM/Intel, Windows x64 и Linux x64. Workflow собирает
+sidecar на целевой ОС, создаёт недрафтовый Release и загружает DMG, NSIS EXE,
+AppImage и DEB со стабильными именами. Версия тега обязана совпадать с
+`tauri.conf.json`.
+
+Подпись Windows, Developer ID и нотарификация Apple сознательно не делаются:
+пользователь получит системное предупреждение при первом запуске.
 
 Alloha как второй источник — отдельная история и пока не нужна: у него
 Guard-верификация, капча и каскад фолбэк-манифестов, которых у Kodik нет.
