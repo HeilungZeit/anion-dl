@@ -1,7 +1,11 @@
 import { inject, Injectable } from '@angular/core';
 import { fetch } from '@tauri-apps/plugin-http';
 
-import { API_BASE_URL } from './api.config';
+import {
+  API_BASE_URL,
+  CLIENT_HEADER,
+  CLIENT_HEADER_VALUE,
+} from './api.config';
 import type {
   Anime,
   AnimeFeed,
@@ -51,22 +55,27 @@ export class AnimeService {
   async search(query: AnimeQuery): Promise<Anime[]> {
     const response = await fetch(`${this.baseUrl}/anime/search`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        [CLIENT_HEADER]: CLIENT_HEADER_VALUE,
+      },
       body: JSON.stringify(query),
     });
 
     if (!response.ok) {
-      throw new Error(this.describeFailure(response.status, '/anime/search'));
+      throw new Error(this.describeFailure(response, '/anime/search'));
     }
 
     return response.json() as Promise<Anime[]>;
   }
 
   private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`);
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
+    });
 
     if (!response.ok) {
-      throw new Error(this.describeFailure(response.status, path));
+      throw new Error(this.describeFailure(response, path));
     }
 
     return response.json() as Promise<T>;
@@ -90,12 +99,23 @@ export class AnimeService {
     return pending;
   }
 
-  private describeFailure(status: number, path: string): string {
-    if (status === 429) {
+  private describeFailure(response: Response, path: string): string {
+    // Vercel отдаёт свой JS-челлендж тоже под кодом 429, и раньше это
+    // выглядело как рейт-лимит бэка — на самом деле запрос до бэка не доходит
+    // вовсе. Отличаем по заголовку, который ставит edge.
+    if (response.headers.get('x-vercel-mitigated')) {
+      return (
+        'Запрос заблокирован защитой Vercel (Attack Challenge Mode): она требует ' +
+        'выполнить JS-проверку, чего приложение сделать не может. Отключите ' +
+        'челлендж или добавьте правило обхода для API.'
+      );
+    }
+
+    if (response.status === 429) {
       return 'Бэк ограничил частоту запросов (429). Подождите немного.';
     }
 
-    return `Запрос ${path} завершился со статусом ${status}`;
+    return `Запрос ${path} завершился со статусом ${response.status}`;
   }
 
   private toQueryString(query: AnimeQuery): string {
