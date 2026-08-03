@@ -123,6 +123,23 @@
   }
 }
 
+/** Счётчик активных загрузок: очередь идёт в фоне и с любой страницы не видна. */
+.nav__badge {
+  display: inline-grid;
+  min-inline-size: 18px;
+  block-size: 18px;
+  place-items: center;
+  margin-inline-start: var(--anion-space-6);
+  padding-inline: 5px;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-accent);
+  box-sizing: border-box;
+  color: var(--anion-text-on-brand);
+  font-size: var(--anion-font-size-11);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .nav__catalog {
   display: inline-flex;
   inline-size: clamp(180px, 18vw, 250px);

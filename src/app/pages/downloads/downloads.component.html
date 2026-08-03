@@ -37,7 +37,10 @@
     <ul class="tasks">
       @for (task of tasks(); track task.id) {
         <li
+          #taskItem
           class="tasks__item"
+          [attr.data-task-id]="task.id"
+          [class.tasks__item--highlight]="task.id === highlight()"
           [class.tasks__item--failed]="task.status === 'failed'"
           [class.tasks__item--done]="task.status === 'done'"
           [class.tasks__item--active]="task.status === 'downloading' || task.status === 'resolving'"
@@ -54,7 +57,16 @@
           <div class="tasks__body">
             <div class="tasks__main">
               <div class="tasks__identity">
-                <strong class="tasks__title">{{ task.title }}</strong>
+                @if (task.animeId) {
+                  <a
+                    class="tasks__title tasks__title--link"
+                    [routerLink]="['/anime', task.animeId]"
+                    [title]="task.title"
+                    >{{ task.title }}</a
+                  >
+                } @else {
+                  <strong class="tasks__title">{{ task.title }}</strong>
+                }
                 <span class="tasks__meta">Серия {{ task.episode }} · {{ task.dubbing }}</span>
               </div>
 
@@ -66,7 +78,7 @@
                 </button>
               } @else if (task.status === 'done') {
                 <button type="button" class="action" (click)="reveal(task)">
-                  Показать в Finder
+                  {{ revealLabel }}
                 </button>
               } @else {
                 <button type="button" class="action" (click)="retry(task)">

@@ -92,6 +92,18 @@ export class AnimeComponent {
     () => new Map(this.downloads.tasks().map((task) => [task.id, task]))
   );
 
+  /**
+   * Сколько серий этого аниме сейчас в работе. Считается от очереди, а не от
+   * последнего клика: после «Скачать все» строк слишком много, чтобы понять по
+   * ним, что что-то вообще происходит, а перезаход на страницу такой счётчик
+   * не сбрасывает.
+   */
+  readonly queuedCount = computed(() => {
+    const own = new Set(this.kodikVideos().map((video) => `${video.videoId}`));
+
+    return this.downloads.pending().filter((task) => own.has(task.id)).length;
+  });
+
   constructor() {
     // Первая доступная озвучка выбирается сама — иначе список серий пуст,
     // и страница выглядит сломанной, хотя данные пришли.
@@ -202,7 +214,9 @@ export class AnimeComponent {
       case 'done':
         return 'Готово';
       case 'cancelled':
-        return 'Отменено';
+        // Кнопка отменённой серии снова запускает загрузку, поэтому подпись —
+        // действие, а не состояние: «Отменено» выглядело неактивной пометкой.
+        return 'Повторить';
       case 'failed':
         return 'Ошибка';
     }
@@ -217,5 +231,10 @@ export class AnimeComponent {
 
   isFailed(episode: Video): boolean {
     return this.taskById().get(`${episode.videoId}`)?.status === 'failed';
+  }
+
+  /** Скачанная серия качается не заново, а открывается в загрузках. */
+  isDone(episode: Video): boolean {
+    return this.taskById().get(`${episode.videoId}`)?.status === 'done';
   }
 }

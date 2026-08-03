@@ -129,6 +129,17 @@
           </button>
         </div>
 
+        @if (queuedCount() > 0) {
+          <p class="queue-hint">
+            <span class="queue-hint__pulse" aria-hidden="true"></span>
+            <span>
+              <strong>В очереди: {{ queuedCount() }}</strong>
+              Загрузки идут по одной ·
+              <a routerLink="/downloads">Открыть загрузки</a>
+            </span>
+          </p>
+        }
+
         <ul class="episodes">
           @for (episode of episodes(); track episode.videoId) {
             <li
@@ -164,6 +175,15 @@
                 <span class="episode-error">
                   Ошибка · <a routerLink="/downloads">Подробнее</a>
                 </span>
+              } @else if (isDone(episode)) {
+                <a
+                  class="episode-action episode-action--done"
+                  routerLink="/downloads"
+                  [queryParams]="{ task: episode.videoId }"
+                  title="Открыть в загрузках"
+                >
+                  Готово ↗
+                </a>
               } @else {
                 <button
                   type="button"

@@ -25,8 +25,13 @@
             class="nav__link"
             routerLink="/downloads"
             routerLinkActive="nav__link--active"
-            >Загрузки</a
-          >
+            >Загрузки
+            @if (pendingCount() > 0) {
+              <span class="nav__badge" aria-label="Активных загрузок">{{
+                pendingCount()
+              }}</span>
+            }
+          </a>
         </div>
 
         <a

@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  viewChildren,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
@@ -16,6 +24,35 @@ export class DownloadsComponent {
 
   readonly tasks = this.downloads.tasks;
   readonly pending = this.downloads.pending;
+
+  readonly revealLabel = revealLabel();
+
+  /** `?task=<id>` — с какой задачи пришли со страницы аниме. */
+  readonly highlight = input<string | undefined>(undefined, { alias: 'task' });
+
+  private readonly items =
+    viewChildren<ElementRef<HTMLElement>>('taskItem');
+
+  /** Прокрутка нужна один раз: дальше список живёт своей жизнью. */
+  private scrolled = false;
+
+  constructor() {
+    // Задачи восстанавливаются из хранилища асинхронно, поэтому «доскроллить»
+    // в afterNextRender нечего — ждём появления самого элемента.
+    effect(() => {
+      const id = this.highlight();
+      const target = this.items().find(
+        (item) => item.nativeElement.dataset['taskId'] === id
+      );
+
+      if (this.scrolled || !id || !target) {
+        return;
+      }
+
+      this.scrolled = true;
+      target.nativeElement.scrollIntoView({ block: 'center' });
+    });
+  }
 
   percent(task: DownloadTask): number {
     if (task.status === 'done') {
@@ -75,4 +112,21 @@ export class DownloadsComponent {
 
 function megabytes(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1);
+}
+
+/**
+ * Подпись кнопки «показать файл» зависит от файлового менеджера ОС. Платформу
+ * берём из user agent вебвью, а не из `plugin-os`: ради одной строки плагин
+ * тянет за собой Rust-зависимость и запись в capabilities.
+ */
+function revealLabel(): string {
+  const agent = navigator.userAgent;
+
+  if (agent.includes('Macintosh')) {
+    return 'Показать в Finder';
+  }
+
+  return agent.includes('Windows')
+    ? 'Показать в проводнике'
+    : 'Показать в папке';
 }
