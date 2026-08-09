@@ -214,6 +214,32 @@ pub async fn resolve_manifest(
     iframe_url: String,
     preferred_quality: Option<u32>,
 ) -> Result<String, String> {
+    let mut last = String::new();
+
+    // Плеер срывается на старте не так уж редко (реклама не догрузилась, клик
+    // пришёлся в пустоту), и одна такая осечка роняла всю серию. Повтор стоит
+    // минуты ожидания, перекачка — двадцати.
+    for _ in 0..RESOLVE_ATTEMPTS {
+        match attempt_resolve(&app, &iframe_url, preferred_quality).await {
+            Ok(manifest) => return Ok(manifest),
+            Err(error) => last = error,
+        }
+
+        // Пауза перед повтором не нужна: страница загружается с нуля в новом
+        // окне, а таймаут в 60 с сам по себе достаточная выдержка.
+    }
+
+    Err(last)
+}
+
+/// Сколько раз пробовать, прежде чем признать серию нерезолвящейся.
+const RESOLVE_ATTEMPTS: u32 = 2;
+
+async fn attempt_resolve(
+    app: &AppHandle,
+    iframe_url: &str,
+    preferred_quality: Option<u32>,
+) -> Result<String, String> {
     // Окно могло остаться от прерванной попытки — иначе build() упадёт на
     // конфликте label.
     if let Some(stale) = app.get_webview_window(RESOLVER_LABEL) {
@@ -230,7 +256,7 @@ pub async fn resolve_manifest(
     let mailbox = Arc::new(Mutex::new(Mailbox::default()));
     let writer = Arc::clone(&mailbox);
 
-    let window = WebviewWindowBuilder::new(&app, RESOLVER_LABEL, WebviewUrl::External(url))
+    let window = WebviewWindowBuilder::new(app, RESOLVER_LABEL, WebviewUrl::External(url))
         .visible(false)
         .initialization_script_for_all_frames(PROBE_SCRIPT)
         .on_document_title_changed(move |_, title| {
@@ -269,7 +295,13 @@ async fn upgrade_quality(manifest: String, preferred: u32) -> String {
         return manifest;
     };
 
-    let client = match reqwest::Client::builder().build() {
+    // Таймаут обязателен: у reqwest его по умолчанию нет, и зависший узел CDN
+    // застопорил бы задачу бессрочно — дедлайн вебвью к этому моменту уже
+    // позади, ограничивать проверку больше нечему.
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+    {
         Ok(client) => client,
         Err(_) => return manifest,
     };
@@ -277,20 +309,34 @@ async fn upgrade_quality(manifest: String, preferred: u32) -> String {
     for quality in QUALITY_LADDER.iter().filter(|item| **item <= preferred) {
         let candidate = format!("{prefix}{quality}{suffix}");
 
-        let reachable = client
-            .get(&candidate)
-            .header("Referer", CDN_REFERER)
-            .send()
-            .await
-            .map(|response| response.status().is_success())
-            .unwrap_or(false);
-
-        if reachable {
+        if is_playlist(&client, &candidate).await {
             return candidate;
         }
     }
 
     manifest
+}
+
+/// Отдаёт ли URL настоящий плейлист.
+///
+/// Кода 200 мало: заглушка CDN приходит с ним же, и ffmpeg получил бы HTML
+/// вместо манифеста — ошибка при этом вылезла бы уже на этапе загрузки и
+/// выглядела бы как «поток битый». Поэтому смотрим на тело: любой плейлист
+/// HLS начинается с `#EXTM3U`.
+async fn is_playlist(client: &reqwest::Client, url: &str) -> bool {
+    let Ok(response) = client.get(url).header("Referer", CDN_REFERER).send().await else {
+        return false;
+    };
+
+    if !response.status().is_success() {
+        return false;
+    }
+
+    response
+        .text()
+        .await
+        .map(|body| body.trim_start().starts_with("#EXTM3U"))
+        .unwrap_or(false)
 }
 
 /// Разрезает URL вокруг числа качества: `…/` + `360` + `.mp4:hls:manifest.m3u8`.
@@ -315,10 +361,14 @@ mod tests {
 
     #[test]
     fn splits_around_quality() {
-        let url = "https://cloud.solodcdn.com/useruploads/abc/def:2026080305/360.mp4:hls:manifest.m3u8";
+        let url =
+            "https://cloud.solodcdn.com/useruploads/abc/def:2026080305/360.mp4:hls:manifest.m3u8";
         let (prefix, suffix) = split_quality(url).expect("должен разрезаться");
 
-        assert_eq!(prefix, "https://cloud.solodcdn.com/useruploads/abc/def:2026080305/");
+        assert_eq!(
+            prefix,
+            "https://cloud.solodcdn.com/useruploads/abc/def:2026080305/"
+        );
         assert_eq!(suffix, ".mp4:hls:manifest.m3u8");
         assert_eq!(format!("{prefix}720{suffix}"), url.replace("360", "720"));
     }

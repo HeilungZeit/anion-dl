@@ -18,6 +18,20 @@ use tauri_plugin_shell::ShellExt;
 #[derive(Default)]
 pub struct Downloads(Mutex<HashMap<String, CommandChild>>);
 
+impl Downloads {
+    /// Реестр под замком, переживающий отравление.
+    ///
+    /// `unwrap()` здесь был бы каскадом: одна паника с захваченным замком — и
+    /// ВСЕ последующие загрузки паникуют вместо того, чтобы вернуть ошибку.
+    /// Отравление означает лишь, что кто-то упал, держа замок; сам HashMap
+    /// остаётся целым, и продолжать с ним безопасно.
+    fn registry(&self) -> std::sync::MutexGuard<'_, HashMap<String, CommandChild>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 /// Событие прогресса. Летит в UI примерно раз в секунду — с такой частотой
 /// ffmpeg сам пишет блоки `-progress`.
 #[derive(Clone, Serialize)]
@@ -62,9 +76,7 @@ pub async fn download_episode(
         .map_err(|error| format!("Не удалось запустить ffmpeg: {error}"))?;
 
     app.state::<Downloads>()
-        .0
-        .lock()
-        .expect("реестр загрузок отравлен")
+        .registry()
         .insert(task_id.clone(), child);
 
     let mut total_secs = 0.0_f64;
@@ -142,7 +154,10 @@ pub async fn download_episode(
                     Err(format!(
                         "ffmpeg завершился с кодом {:?}:\n{}",
                         status.code,
-                        stderr_tail.join("")
+                        // Через "\n", а не "": Tauri отдаёт stderr уже
+                        // построчно и перевод строки срезает, поэтому склейка
+                        // впритык давала одну нечитаемую стену текста.
+                        stderr_tail.join("\n")
                     ))
                 };
             }
@@ -158,22 +173,14 @@ pub async fn download_episode(
 pub const CANCELLED: &str = "Отменено";
 
 fn forget_child(app: &AppHandle, task_id: &str) -> Option<CommandChild> {
-    app.state::<Downloads>()
-        .0
-        .lock()
-        .expect("реестр загрузок отравлен")
-        .remove(task_id)
+    app.state::<Downloads>().registry().remove(task_id)
 }
 
 /// Убивает ffmpeg выбранной задачи. Файл удалит сама download_episode, когда
 /// увидит, что процесс исчез из реестра.
 #[tauri::command]
 pub fn cancel_download(downloads: State<'_, Downloads>, task_id: String) -> Result<(), String> {
-    let child = downloads
-        .0
-        .lock()
-        .expect("реестр загрузок отравлен")
-        .remove(&task_id);
+    let child = downloads.registry().remove(&task_id);
 
     match child {
         Some(child) => child
@@ -189,9 +196,10 @@ fn build_args(manifest_url: &str, output_path: &str, referer: &str) -> Vec<Strin
         // Referer нужен: CDN отдаёт сегменты только с ним.
         "-headers".into(),
         format!("Referer: {referer}\r\n"),
-        // Без ретраев отвалившийся сегмент просто пропускается: ffmpeg вернёт
-        // exit=0, а в файле будет дыра. Наблюдалось вживую — таймаут одного из
-        // хостов CDN стоил 12 кадров из 600 при коде возврата 0.
+        // Ретраи протокола: работают ВНУТРИ одного запроса за сегмент —
+        // оборвалось соединение, переподключились. Наблюдалось вживую —
+        // таймаут одного из хостов CDN стоил 12 кадров из 600 при коде
+        // возврата 0.
         "-reconnect".into(),
         "1".into(),
         "-reconnect_streamed".into(),
@@ -199,6 +207,29 @@ fn build_args(manifest_url: &str, output_path: &str, referer: &str) -> Vec<Strin
         "-reconnect_on_network_error".into(),
         "1".into(),
         "-reconnect_delay_max".into(),
+        "10".into(),
+        // ...а `-reconnect_on_network_error` покрывает только TCP/TLS: ответ
+        // 502/503 сетевой ошибкой не считается и без этого списка не
+        // переспрашивается вовсе.
+        //
+        // 4xx сюда добавлять НЕЛЬЗЯ: 403 у CDN означает протухшую подпись, она
+        // не оживёт, и ретраи выльются в сотни бесполезных запросов при
+        // намертво стоящем прогрессе (проверено на Alloha).
+        "-reconnect_on_http_error".into(),
+        "5xx,408,429".into(),
+        // Соединение может остаться живым, но перестать отдавать байты — на
+        // такой сокет ретраи не срабатывают, и задача висит вечно. В
+        // МИКРОсекундах, вопреки виду: 20 с на чтение при сегментах ~10 с.
+        "-rw_timeout".into(),
+        "20000000".into(),
+        // Ретраи ДЕМУКСЕРА, поверх протокольных. По умолчанию 0, и это значит
+        // не «без повторов», а «пропустить сегмент и идти дальше» — вот откуда
+        // берётся дыра в файле при exit=0. Ретраи протокола сюда не дотянутся:
+        // запрос к тому моменту уже завершился отказом.
+        //
+        // Ценнее самих повторов побочный эффект: исчерпав их, ffmpeg
+        // завершается ненулевым кодом, и тихая дыра становится явной ошибкой.
+        "-seg_max_retry".into(),
         "10".into(),
         "-i".into(),
         manifest_url.into(),
@@ -236,7 +267,11 @@ fn build_args(manifest_url: &str, output_path: &str, referer: &str) -> Vec<Strin
 /// загрузка полной серии однажды была помечена ошибкой, хотя файл смотрелся
 /// целиком. Поэтому жалобы теперь только предупреждают, а решает объём данных.
 fn is_decoder_complaint(line: &str) -> bool {
-    const MARKERS: [&str; 3] = ["non-existing PPS", "no frame!", "Error in the pull function"];
+    const MARKERS: [&str; 3] = [
+        "non-existing PPS",
+        "no frame!",
+        "Error in the pull function",
+    ];
 
     MARKERS.iter().any(|marker| line.contains(marker))
 }
