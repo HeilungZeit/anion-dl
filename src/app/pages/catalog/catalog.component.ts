@@ -3,12 +3,13 @@ import {
   Component,
   computed,
   inject,
+  linkedSignal,
   resource,
   signal,
 } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { TuiIcon, TuiLoader, TuiTextfield } from '@taiga-ui/core';
+import { TuiIcon, TuiInput, TuiLoader, TuiTextfield } from '@taiga-ui/core';
 import {
   TuiChevron,
   TuiDataListWrapper,
@@ -16,7 +17,7 @@ import {
 } from '@taiga-ui/kit';
 
 import { AnimeService } from '../../api/anime.service';
-import type { AnimeQuery } from '../../api/anime.types';
+import type { Anime, AnimeQuery } from '../../api/anime.types';
 import { AnimeCardComponent } from '../../components/anime-card/anime-card.component';
 
 const PAGE_SIZE = 20;
@@ -71,6 +72,7 @@ const DEFAULT_SORT = SORT_OPTIONS[0] as CatalogOption;
     TuiChevron,
     TuiDataListWrapper,
     TuiIcon,
+    TuiInput,
     TuiLoader,
     TuiSelect,
     TuiTextfield,
@@ -147,12 +149,31 @@ export class CatalogComponent {
     () => this.draft().trim() !== this.query().trim()
   );
 
-  readonly pageItems = computed(() =>
-    this.results.value()?.slice(0, PAGE_SIZE)
+  /** Идёт запрос или ещё тикает дебаунс — список показывает прошлую выдачу. */
+  readonly isRefreshing = computed(
+    () => this.results.isLoading() || this.isSearching()
   );
 
+  /**
+   * Последняя удачно загруженная страница.
+   *
+   * `resource` обнуляет `value()`, как только меняются params, а до прихода
+   * ответа отдаёт `undefined`. Без этого держателя список пропадал на каждое
+   * нажатие клавиши и возвращался через полсекунды — дебаунс переставал
+   * ощущаться дебаунсом, хотя формально работал.
+   */
+  private readonly loaded = linkedSignal<
+    readonly Anime[] | undefined,
+    readonly Anime[] | undefined
+  >({
+    source: () => this.results.value(),
+    computation: (value, previous) => value ?? previous?.value,
+  });
+
+  readonly pageItems = computed(() => this.loaded()?.slice(0, PAGE_SIZE));
+
   readonly hasNextPage = computed(
-    () => (this.results.value()?.length ?? 0) > PAGE_SIZE
+    () => (this.loaded()?.length ?? 0) > PAGE_SIZE
   );
 
   onInput(value: string): void {

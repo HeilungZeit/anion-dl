@@ -42,12 +42,14 @@
           [attr.data-task-id]="task.id"
           [class.tasks__item--highlight]="task.id === highlight()"
           [class.tasks__item--failed]="task.status === 'failed'"
-          [class.tasks__item--done]="task.status === 'done'"
+          [class.tasks__item--done]="task.status === 'done' && !isMissing(task)"
+          [class.tasks__item--missing]="isMissing(task)"
           [class.tasks__item--active]="task.status === 'downloading' || task.status === 'resolving'"
         >
           <div class="tasks__icon" aria-hidden="true">
-            @switch (task.status) {
+            @switch (isMissing(task) ? 'missing' : task.status) {
               @case ('done') { ✓ }
+              @case ('missing') { ? }
               @case ('failed') { ! }
               @case ('cancelled') { × }
               @default { ↓ }
@@ -76,9 +78,22 @@
                 <button type="button" class="action" (click)="cancel(task)">
                   Отменить
                 </button>
+              } @else if (task.status === 'done' && !isMissing(task)) {
+                <span class="tasks__actions">
+                  <button type="button" class="action" (click)="play(task)">
+                    Открыть
+                  </button>
+                  <button
+                    type="button"
+                    class="action action--quiet"
+                    (click)="reveal(task)"
+                  >
+                    {{ revealLabel }}
+                  </button>
+                </span>
               } @else if (task.status === 'done') {
-                <button type="button" class="action" (click)="reveal(task)">
-                  {{ revealLabel }}
+                <button type="button" class="action" (click)="retry(task)">
+                  Скачать снова
                 </button>
               } @else {
                 <button type="button" class="action" (click)="retry(task)">
@@ -94,7 +109,8 @@
             <span class="tasks__bar">
               <span
                 class="tasks__bar-fill"
-                [class.tasks__bar-fill--done]="task.status === 'done'"
+                [class.tasks__bar-fill--done]="task.status === 'done' && !isMissing(task)"
+                [class.tasks__bar-fill--missing]="isMissing(task)"
                 [class.tasks__bar-fill--failed]="task.status === 'failed'"
                 [style.width.%]="percent(task)"
               ></span>

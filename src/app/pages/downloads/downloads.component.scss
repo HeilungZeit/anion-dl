@@ -197,6 +197,13 @@
     border-color: rgb(34 197 94 / 24%);
   }
 
+  // Задача успешна, но файла нет. Не ошибка загрузки — приглушённый вид, а не
+  // красный: пользователь чаще всего удалил серию сам, посмотрев её.
+  &--missing {
+    border-color: var(--anion-border);
+    opacity: 0.75;
+  }
+
   &--highlight {
     border-color: var(--anion-accent-a60);
     box-shadow: 0 4px 16px rgb(0 0 0 / 12%), 0 0 0 1px var(--anion-accent-a45);
@@ -318,6 +325,17 @@
   &--failed {
     background: var(--anion-negative);
   }
+
+  &--missing {
+    background: var(--anion-surface-5);
+  }
+}
+
+// Две кнопки в одной ячейке строки: «Открыть» и «Показать в Finder».
+.tasks__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--anion-space-8, 8px);
 }
 
 @media (max-width: 720px) {

@@ -12,6 +12,14 @@ const SETTINGS_FILE = 'settings.json';
 const OUTPUT_DIR_KEY = 'outputDir';
 const QUALITY_KEY = 'quality';
 const TASKS_KEY = 'tasks';
+const FOLDER_PER_ANIME_KEY = 'folderPerAnime';
+
+/**
+ * Раскладка по подпапкам включена по умолчанию: после трёх сезонов плоская
+ * папка перестаёт читаться. Уже сохранённые задачи хранят готовый абсолютный
+ * путь, поэтому смена настройки их не ломает — она влияет только на новые.
+ */
+const DEFAULT_FOLDER_PER_ANIME = true;
 
 /**
  * Referer для CDN. Сегменты отдаются только с ним, поэтому он не косметика.
@@ -64,6 +72,13 @@ interface DownloadReport {
   warning: string | null;
 }
 
+/** Ответ `probe_files`: что из перечисленных путей действительно на диске. */
+interface FileState {
+  path: string;
+  exists: boolean;
+  sizeBytes: number;
+}
+
 /** Что переживает перезапуск. Прогресс не хранится — он всё равно обнулится. */
 type StoredTask = Omit<
   DownloadTask,
@@ -82,6 +97,15 @@ export class DownloadService {
   readonly pending = computed(() =>
     this.tasks().filter((task) => ACTIVE.includes(task.status))
   );
+
+  /**
+   * Задачи со статусом `done`, у которых файла на диске больше нет.
+   *
+   * Не поле задачи и не часть хранилища: это состояние файловой системы, а не
+   * загрузки, и живёт оно ровно до следующей сверки. Хранить его — значит
+   * закрепить в `settings.json` наблюдение, которое устареет к перезапуску.
+   */
+  readonly missingFiles = signal<ReadonlySet<string>>(new Set());
 
   /**
    * Параллелизм намеренно равен единице. CDN уже показал таймауты на одном
@@ -128,16 +152,62 @@ export class DownloadService {
     await this.store.save();
   }
 
+  async getFolderPerAnime(): Promise<boolean> {
+    return (
+      (await this.store.get<boolean>(FOLDER_PER_ANIME_KEY)) ??
+      DEFAULT_FOLDER_PER_ANIME
+    );
+  }
+
+  async setFolderPerAnime(enabled: boolean): Promise<void> {
+    await this.store.set(FOLDER_PER_ANIME_KEY, enabled);
+    await this.store.save();
+  }
+
+  /**
+   * Какие из серий уже лежат на диске — по факту наличия файла, а не по списку
+   * задач. Проверять надо именно так: `clearFinished` стирает задачу, файл
+   * остаётся, и без этой сверки серия качается заново без единого намёка.
+   *
+   * Отдаётся вместе с путём: вызывающей стороне он нужен, чтобы открыть файл, а
+   * собирать его второй раз у себя — верный способ разойтись с этой сверкой.
+   */
+  async findDownloaded(
+    animeTitle: string,
+    episodes: Video[]
+  ): Promise<ReadonlyMap<number, string>> {
+    const paths = await this.plannedPaths(animeTitle, episodes);
+    const states = await this.probe([...paths.values()]);
+
+    return new Map(
+      [...paths].filter(([, path]) => states.get(path))
+    );
+  }
+
+  /**
+   * Сверяет готовые задачи с диском. Дёргается при старте и после каждой
+   * завершившейся загрузки — чаще незачем, файлы пропадают не сами по себе.
+   */
+  async refreshFiles(): Promise<void> {
+    const finished = this.tasks().filter((task) => task.status === 'done');
+    const states = await this.probe(finished.map((task) => task.outputPath));
+
+    this.missingFiles.set(
+      new Set(
+        finished
+          .filter((task) => !states.get(task.outputPath))
+          .map((task) => task.id)
+      )
+    );
+  }
+
   /** Ставит серии в очередь и запускает обработчик, если тот простаивает. */
   async enqueue(
     animeId: number,
     animeTitle: string,
     episodes: Video[]
   ): Promise<void> {
-    const outputDir = await this.getOutputDir();
-    if (!outputDir) {
-      throw new Error('Не выбрана папка для загрузок');
-    }
+    const paths = await this.plannedPaths(animeTitle, episodes);
 
     for (const episode of episodes) {
       const id = `${episode.videoId}`;
@@ -158,7 +228,7 @@ export class DownloadService {
         processedSecs: 0,
         totalSecs: 0,
         sizeBytes: 0,
-        outputPath: `${outputDir}/${buildFileName(animeTitle, episode)}`,
+        outputPath: paths.get(episode.videoId) ?? '',
         error: '',
         warning: '',
       });
@@ -199,6 +269,43 @@ export class DownloadService {
   async clearFinished(): Promise<void> {
     this.tasks.update((tasks) => tasks.filter(isActive));
     await this.persist();
+  }
+
+  /**
+   * Куда легла бы каждая из серий. Общий источник пути для постановки в очередь
+   * и для проверки «а не скачано ли уже» — иначе эти два места разъедутся, и
+   * дедупликация начнёт смотреть не на тот файл.
+   */
+  private async plannedPaths(
+    animeTitle: string,
+    episodes: Video[]
+  ): Promise<ReadonlyMap<number, string>> {
+    const outputDir = await this.getOutputDir();
+    if (!outputDir) {
+      throw new Error('Не выбрана папка для загрузок');
+    }
+
+    const folder = (await this.getFolderPerAnime())
+      ? `${outputDir}/${sanitize(animeTitle)}`
+      : outputDir;
+
+    return new Map(
+      episodes.map((episode) => [
+        episode.videoId,
+        `${folder}/${buildFileName(animeTitle, episode)}`,
+      ])
+    );
+  }
+
+  /** Путь -> лежит ли файл. Пустой запрос до Rust не доходит. */
+  private async probe(paths: string[]): Promise<ReadonlyMap<string, boolean>> {
+    if (paths.length === 0) {
+      return new Map();
+    }
+
+    const states = await invoke<FileState[]>('probe_files', { paths });
+
+    return new Map(states.map((state) => [state.path, state.exists]));
   }
 
   /**
@@ -249,6 +356,18 @@ export class DownloadService {
       });
 
       this.patch(task.id, { status: 'done', warning: report.warning ?? '' });
+
+      // Файл только что появился — снимаем пометку «удалён», если задача её
+      // несла с прошлой сверки после «Скачать снова».
+      this.missingFiles.update((missing) => {
+        if (!missing.has(task.id)) {
+          return missing;
+        }
+
+        const next = new Set(missing);
+        next.delete(task.id);
+        return next;
+      });
     } catch (error: unknown) {
       const message = String(error);
 
@@ -274,6 +393,7 @@ export class DownloadService {
       }))
     );
 
+    void this.refreshFiles();
     void this.drain();
   }
 
@@ -307,8 +427,19 @@ function isActive(task: { status: TaskStatus }): boolean {
 /** `Название - E01 [Озвучка].mp4`, безопасное для файловой системы. */
 export function buildFileName(animeTitle: string, episode: Video): string {
   const number = episode.number.padStart(2, '0');
-  const raw = `${animeTitle} - E${number} [${episode.data.dubbing}]`;
 
-  // Слэши и двоеточия ломают путь, остальное — вопрос читаемости в Finder.
-  return `${raw.replace(/[/\\:*?"<>|]/g, '').trim()}.mp4`;
+  return `${sanitize(`${animeTitle} - E${number} [${episode.data.dubbing}]`)}.mp4`;
+}
+
+/**
+ * Убирает из имени то, что ломает путь. Применяется и к файлу, и к папке
+ * аниме: у названия с двоеточием (а их много — «Название: Подзаголовок») иначе
+ * получилась бы лишняя вложенность, а на Windows такой каталог не создался бы
+ * вовсе.
+ *
+ * Точка в начале тоже срезается: на macOS и Linux она делает папку скрытой,
+ * и пользователь не нашёл бы свои серии в Finder.
+ */
+function sanitize(raw: string): string {
+  return raw.replace(/[/\\:*?"<>|]/g, '').trim().replace(/^\.+/, '').trim();
 }

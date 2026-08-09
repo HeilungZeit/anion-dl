@@ -1,4 +1,5 @@
 mod download;
+mod files;
 // pub, чтобы резолвер можно было прогнать из examples/resolve_probe.rs без
 // кликов по нативному окну.
 pub mod resolver;
@@ -10,7 +11,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             resolver::resolve_manifest,
             download::download_episode,
-            download::cancel_download
+            download::cancel_download,
+            files::probe_files
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())

@@ -135,6 +135,14 @@
   grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   align-items: stretch;
   gap: var(--anion-space-12);
+  transition: opacity var(--anion-duration-fast) ease;
+
+  // Пока идёт дебаунс и следующий запрос, прошлая выдача остаётся на месте и
+  // просто гаснет. Раньше на её месте появлялся лоадер — на каждое нажатие
+  // клавиши, из-за чего поиск выглядел дёрганым, а дебаунса будто не было.
+  &--stale {
+    opacity: 0.5;
+  }
 }
 
 .catalog-filters {
@@ -194,28 +202,21 @@ form {
   }
 }
 
+// Высоту, overflow и сброс инпута тут задавать не нужно: Taiga держит
+// `min-block-size: var(--t-height)` сама, а инпут внутри позиционирует
+// абсолютно. Прежние правила лечили симптом того, что инпут не был инпутом
+// Taiga (см. `tuiInput` в разметке) и рисовался как обычный флекс-ребёнок —
+// со своей рамкой, фоном и переносом служебного контента на вторую строку.
 .filter-control {
   --tui-background-base-alt: var(--anion-surface-2);
   --tui-radius-m: var(--anion-radius-md);
 
   inline-size: 100%;
-  block-size: var(--tui-height-m);
-  min-block-size: var(--tui-height-m);
-  max-block-size: var(--tui-height-m);
-  flex-wrap: nowrap;
-  overflow: hidden;
   border-radius: var(--anion-radius-md);
   transition: background var(--anion-duration-fast) ease;
 
   &:hover {
     background: var(--anion-surface-3);
-  }
-
-  input {
-    border: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    outline: 0 !important;
   }
 }
 

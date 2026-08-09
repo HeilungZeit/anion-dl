@@ -8,7 +8,7 @@ import {
   viewChildren,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 
 import { DownloadService, DownloadTask } from '../../api/download.service';
 
@@ -24,6 +24,7 @@ export class DownloadsComponent {
 
   readonly tasks = this.downloads.tasks;
   readonly pending = this.downloads.pending;
+  readonly missingFiles = this.downloads.missingFiles;
 
   readonly revealLabel = revealLabel();
 
@@ -52,6 +53,15 @@ export class DownloadsComponent {
       this.scrolled = true;
       target.nativeElement.scrollIntoView({ block: 'center' });
     });
+
+    // Файл мог исчезнуть, пока приложение было открыто на другой странице:
+    // сверки при старте для этого мало.
+    void this.downloads.refreshFiles();
+  }
+
+  /** Задача успешна, но файла по её пути больше нет. */
+  isMissing(task: DownloadTask): boolean {
+    return this.missingFiles().has(task.id);
   }
 
   percent(task: DownloadTask): number {
@@ -75,9 +85,18 @@ export class DownloadsComponent {
       case 'downloading':
         return `${this.percent(task)}% · ${megabytes(task.sizeBytes)} МБ`;
       case 'done':
-        return task.warning
-          ? `Готово с замечанием · ${megabytes(task.sizeBytes)} МБ`
-          : `Готово · ${megabytes(task.sizeBytes)} МБ`;
+        // Размер берётся из последнего события прогресса, а после перезапуска
+        // он нулевой — показывать «0.0 МБ» рядом с «Готово» незачем.
+        if (this.isMissing(task)) {
+          return 'Файл удалён';
+        }
+
+        return [
+          task.warning ? 'Готово с замечанием' : 'Готово',
+          task.sizeBytes > 0 ? `${megabytes(task.sizeBytes)} МБ` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
       case 'cancelled':
         return 'Отменено';
       case 'failed':
@@ -107,6 +126,17 @@ export class DownloadsComponent {
 
   reveal(task: DownloadTask): Promise<void> {
     return revealItemInDir(task.outputPath);
+  }
+
+  /** Запускает серию в системном плеере — ради этого всё и качалось. */
+  async play(task: DownloadTask): Promise<void> {
+    try {
+      await openPath(task.outputPath);
+    } catch {
+      // Файл мог исчезнуть между сверкой и кликом. Тихо пересверяемся: строка
+      // сама переоденется в «Файл удалён», диалог здесь был бы лишним.
+      await this.downloads.refreshFiles();
+    }
   }
 }
 

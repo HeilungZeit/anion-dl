@@ -65,6 +65,14 @@ pub async fn download_episode(
     output_path: String,
     referer: String,
 ) -> Result<DownloadReport, String> {
+    // Папку создаём здесь, а не в UI: раскладка по подпапкам означает, что
+    // каталог аниме до первой серии не существует, а ffmpeg сам его не заведёт —
+    // он падает с «No such file or directory» уже после резолва манифеста.
+    if let Some(parent) = std::path::Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Не удалось создать папку {}: {error}", parent.display()))?;
+    }
+
     let sidecar = app
         .shell()
         .sidecar("ffmpeg")

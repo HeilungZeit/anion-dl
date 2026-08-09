@@ -264,6 +264,22 @@
   }
 }
 
+// Настройка раскладки живёт под сеткой контролов, а не в ней: там колонки
+// подписаны сверху, а здесь подпись справа от флажка.
+.download__toggle {
+  align-items: flex-start;
+  padding: 0 var(--anion-space-20) var(--anion-space-16);
+
+  > span[aria-hidden] {
+    margin-block-start: 1px;
+  }
+}
+
+.download__toggle-text {
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-12);
+}
+
 .download__bulk {
   display: flex;
   gap: var(--anion-space-8);
@@ -405,9 +421,11 @@
   }
 }
 
-.episodes__check {
+// Общий вид флажка: выбор серии и настройка раскладки рисуются одинаково,
+// различаются только обвязкой вокруг.
+.episodes__check,
+.download__toggle {
   display: flex;
-  align-items: center;
   gap: var(--anion-space-10);
   cursor: pointer;
 
@@ -418,7 +436,7 @@
     opacity: 0;
   }
 
-  > span {
+  > span[aria-hidden] {
     display: grid;
     inline-size: 18px;
     block-size: 18px;
@@ -444,6 +462,10 @@
   input:focus-visible + span {
     box-shadow: var(--anion-focus-ring);
   }
+}
+
+.episodes__check {
+  align-items: center;
 
   strong {
     color: var(--anion-text-primary);
@@ -507,6 +529,23 @@
   color: var(--anion-positive);
 }
 
+// «Смотреть» и стрелка в загрузки занимают одну ячейку строки, поэтому ширина
+// колонки не должна разъезжаться относительно строк с одной кнопкой.
+.episode-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--anion-space-8);
+}
+
+// Стрелка в загрузки — такая же приглушённая ссылка, как «Подробнее» у ошибки;
+// оформление берётся из общего правила ниже.
+.episode-link {
+  display: inline-flex;
+  min-block-size: 34px;
+  align-items: center;
+  font-size: var(--anion-font-size-12);
+}
+
 .episode-action--active {
   border-color: var(--anion-accent-a45);
   background: var(--anion-accent-a15);
@@ -518,20 +557,21 @@
   font-size: var(--anion-font-size-12);
   font-weight: 600;
   white-space: nowrap;
+}
 
-  a {
-    color: var(--anion-accent-text-muted);
-    outline: none;
-    text-decoration: none;
+.episode-error a,
+.episode-link {
+  color: var(--anion-accent-text-muted);
+  outline: none;
+  text-decoration: none;
 
-    &:hover {
-      text-decoration: underline;
-    }
+  &:hover {
+    text-decoration: underline;
+  }
 
-    &:focus-visible {
-      border-radius: 3px;
-      box-shadow: var(--anion-focus-ring);
-    }
+  &:focus-visible {
+    border-radius: 3px;
+    box-shadow: var(--anion-focus-ring);
   }
 }
 
@@ -549,6 +589,13 @@
 
   &--failed {
     color: var(--anion-negative-text);
+  }
+
+  // Сообщение об исходе, а не об ошибке: «всё уже скачано» — нормальный ответ,
+  // и красный фон базового .probe тут врал бы.
+  &--notice {
+    background: var(--anion-surface-3);
+    color: var(--anion-text-secondary);
   }
 }
 

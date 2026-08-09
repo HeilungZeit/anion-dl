@@ -10,6 +10,8 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { confirm } from '@tauri-apps/plugin-dialog';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { TuiLoader, TuiTextfield } from '@taiga-ui/core';
 import {
   TuiChevron,
@@ -82,6 +84,19 @@ export class AnimeComponent {
 
   readonly outputDir = signal<string>('');
   readonly lastError = signal<string>('');
+  /** Нейтральное сообщение об исходе действия — в отличие от lastError. */
+  readonly notice = signal<string>('');
+
+  readonly folderPerAnime = signal<boolean>(true);
+
+  /**
+   * Серии, файлы которых уже лежат на диске: videoId -> путь.
+   *
+   * Источник правды здесь — файловая система, а не список задач: после
+   * «Очистить завершённые» задач нет, а файлы есть, и без этой сверки страница
+   * предлагала бы скачать заново весь сезон.
+   */
+  readonly onDisk = signal<ReadonlyMap<number, string>>(new Map());
 
   readonly qualities = QUALITIES;
   readonly quality = signal<number>(DEFAULT_QUALITY);
@@ -120,11 +135,44 @@ export class AnimeComponent {
       .then((dir) => this.outputDir.set(dir ?? ''));
 
     void this.downloads.getQuality().then((value) => this.quality.set(value));
+
+    void this.downloads
+      .getFolderPerAnime()
+      .then((value) => this.folderPerAnime.set(value));
+
+    // Сверка с диском. Зависит и от pending().length: когда очередь
+    // дорабатывает серию, счётчик меняется — это и есть сигнал пересверить.
+    // На сами tasks() подписываться нельзя, они дёргаются раз в секунду от
+    // событий прогресса.
+    effect(() => {
+      const episodes = this.episodes();
+      const title = this.anime.value()?.title;
+
+      this.outputDir();
+      this.folderPerAnime();
+      this.downloads.pending().length;
+
+      if (!title || episodes.length === 0) {
+        return;
+      }
+
+      void this.downloads
+        .findDownloaded(title, episodes)
+        .then((found) => this.onDisk.set(found))
+        // Папка не выбрана — сверять не с чем. Это штатное состояние до первой
+        // настройки, а не ошибка, которую стоит показывать.
+        .catch(() => this.onDisk.set(new Map()));
+    });
   }
 
   async changeQuality(value: number): Promise<void> {
     this.quality.set(value);
     await this.downloads.setQuality(value);
+  }
+
+  async changeFolderPerAnime(enabled: boolean): Promise<void> {
+    this.folderPerAnime.set(enabled);
+    await this.downloads.setFolderPerAnime(enabled);
   }
 
   async chooseDir(): Promise<void> {
@@ -169,6 +217,7 @@ export class AnimeComponent {
 
   private async enqueue(episodes: Video[]): Promise<void> {
     this.lastError.set('');
+    this.notice.set('');
 
     if (episodes.length === 0) {
       return;
@@ -176,14 +225,82 @@ export class AnimeComponent {
 
     try {
       const anime = this.anime.value();
+      const title = anime?.title ?? '';
 
-      await this.downloads.enqueue(
-        anime?.animeId ?? 0,
-        anime?.title ?? '',
-        episodes
-      );
+      const wanted = await this.withoutRedundant(title, episodes);
+      if (wanted.length === 0) {
+        return;
+      }
+
+      await this.downloads.enqueue(anime?.animeId ?? 0, title, wanted);
     } catch (error: unknown) {
       this.lastError.set(String(error));
+    }
+  }
+
+  /**
+   * Отсеивает то, что уже скачано, спросив один раз на всю пачку.
+   *
+   * Вопрос по каждой серии превратил бы «Скачать все серии» в двадцать
+   * диалогов, поэтому спрашиваем разом; отказ означает «пропустить готовые», а
+   * не «отменить всё» — иначе одна старая серия в выборке блокировала бы
+   * докачку остальных.
+   */
+  private async withoutRedundant(
+    title: string,
+    episodes: Video[]
+  ): Promise<Video[]> {
+    const downloaded = await this.downloads.findDownloaded(title, episodes);
+    if (downloaded.size === 0) {
+      return episodes;
+    }
+
+    const again = await confirm(
+      `Уже скачано серий: ${downloaded.size}. Скачать их заново поверх файлов?`,
+      {
+        title: 'Серии уже на диске',
+        kind: 'warning',
+        okLabel: 'Скачать заново',
+        cancelLabel: 'Пропустить',
+      }
+    );
+
+    if (again) {
+      return episodes;
+    }
+
+    const rest = episodes.filter(
+      (episode) => !downloaded.has(episode.videoId)
+    );
+
+    if (rest.length === 0) {
+      this.notice.set('Все выбранные серии уже скачаны.');
+    }
+
+    return rest;
+  }
+
+  /** Файл уже на диске — открываем, а не качаем второй раз. */
+  isOnDisk(episode: Video): boolean {
+    return this.onDisk().has(episode.videoId);
+  }
+
+  async play(episode: Video): Promise<void> {
+    const path = this.onDisk().get(episode.videoId);
+    if (!path) {
+      return;
+    }
+
+    try {
+      await openPath(path);
+    } catch {
+      // Файл исчез между сверкой и кликом — снимаем пометку, строка сама
+      // вернётся к кнопке «Скачать».
+      this.onDisk.update((current) => {
+        const next = new Map(current);
+        next.delete(episode.videoId);
+        return next;
+      });
     }
   }
 

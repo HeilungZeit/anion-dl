@@ -35,10 +35,13 @@
   }
 
   <div class="catalog-container">
-    <section class="catalog-list" aria-live="polite">
-      @if (results.isLoading() || isSearching()) {
-        <div class="state"><tui-loader size="l" /></div>
-      } @else if (results.error()) {
+    <section
+      class="catalog-list"
+      aria-live="polite"
+      [attr.aria-busy]="isRefreshing()"
+      [class.catalog-list--stale]="isRefreshing()"
+    >
+      @if (results.error()) {
         <p class="state state--error">Не удалось загрузить каталог: {{ results.error() }}</p>
       } @else if (pageItems(); as list) {
         @for (anime of list; track anime.animeId) {
@@ -107,6 +110,8 @@
             </button>
           </nav>
         }
+      } @else {
+        <div class="state"><tui-loader size="l" /></div>
       }
     </section>
 
@@ -121,7 +126,7 @@
           <span>Название</span>
           <tui-textfield class="filter-control" tuiTextfieldSize="m" [tuiTextfieldCleaner]="false">
             <input
-              tuiTextfield
+              tuiInput
               placeholder="Найти аниме"
               [ngModel]="draft()"
               (ngModelChange)="onInput($event)"

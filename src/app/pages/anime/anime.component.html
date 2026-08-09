@@ -104,8 +104,24 @@
           </label>
         </div>
 
+        <label class="download__toggle">
+          <input
+            type="checkbox"
+            [checked]="folderPerAnime()"
+            (change)="changeFolderPerAnime(!folderPerAnime())"
+          />
+          <span aria-hidden="true"></span>
+          <span class="download__toggle-text">
+            Складывать серии в отдельную папку с названием аниме
+          </span>
+        </label>
+
         @if (lastError()) {
           <p class="probe probe--failed">{{ lastError() }}</p>
+        }
+
+        @if (notice()) {
+          <p class="probe probe--notice">{{ notice() }}</p>
         }
 
         <div class="download__bulk">
@@ -175,15 +191,27 @@
                 <span class="episode-error">
                   Ошибка · <a routerLink="/downloads">Подробнее</a>
                 </span>
-              } @else if (isDone(episode)) {
-                <a
-                  class="episode-action episode-action--done"
-                  routerLink="/downloads"
-                  [queryParams]="{ task: episode.videoId }"
-                  title="Открыть в загрузках"
-                >
-                  Готово ↗
-                </a>
+              } @else if (!isBusy(episode) && isOnDisk(episode)) {
+                <span class="episode-actions">
+                  <button
+                    type="button"
+                    class="episode-action episode-action--done"
+                    title="Открыть файл в системном плеере"
+                    (click)="play(episode)"
+                  >
+                    Смотреть ▸
+                  </button>
+
+                  @if (isDone(episode)) {
+                    <a
+                      class="episode-link"
+                      routerLink="/downloads"
+                      [queryParams]="{ task: episode.videoId }"
+                      title="Открыть в загрузках"
+                      >↗</a
+                    >
+                  }
+                </span>
               } @else {
                 <button
                   type="button"
