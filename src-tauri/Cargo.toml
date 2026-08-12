@@ -1,6 +1,6 @@
 [package]
 name = "anion-dl"
-version = "0.1.7"
+version = "0.1.8"
 description = "Оффлайн-качалка серий для anion"
 authors = ["Dmitry Gavrichenko"]
 edition = "2021"
@@ -33,4 +33,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["time"] }
 # Проверка существования манифеста нужного качества. Идёт из Rust, а не из UI,
 # чтобы не вносить домены CDN в capabilities: они меняются и заранее неизвестны.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Ссылки Kodik приезжают как base64 поверх посимвольного сдвига. Крейт без
+# собственных зависимостей — дешевле, чем свой декодер с краевыми случаями.
+base64 = "0.22"

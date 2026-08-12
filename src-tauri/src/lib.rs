@@ -1,5 +1,6 @@
 mod download;
 mod files;
+mod kodik;
 // pub, чтобы резолвер можно было прогнать из examples/resolve_probe.rs без
 // кликов по нативному окну.
 pub mod resolver;

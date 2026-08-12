@@ -1,10 +1,10 @@
 //! Добыча URL HLS-манифеста из плеера Kodik.
 //!
-//! Манифест не лежит в разметке: плеер получает его отдельным запросом, а сама
-//! ссылка приходит обфусцированной (base64 + посимвольный сдвиг) и раскрывается
-//! в JS. Реверсить это бессмысленно — обфускация меняется с каждым релизом
-//! плеера. Вместо этого мы даём странице выполниться в настоящем вебвью и
-//! просто подслушиваем её сетевые запросы.
+//! Основной путь — обычные HTTP-запросы, он живёт в [`crate::kodik`]. Здесь
+//! лежит фолбэк: страница выполняется в скрытом вебвью, а мы подслушиваем её
+//! сетевые запросы. Он медленнее на порядок (секунды против сотен миллисекунд,
+//! до минуты при осечке), зато переживает смену эндпойнта и формы разметки —
+//! ровно того, на чём HTTP-тракт и ломается.
 //!
 //! Канал передачи наружу — `document.title`, а не Tauri IPC. IPC на удалённом
 //! origin требует включения remote-домена в capabilities, что заметно расширяет
@@ -203,24 +203,35 @@ const QUALITY_LADDER: [u32; 4] = [1080, 720, 480, 360];
 /// Referer, без которого CDN не отдаёт ни манифест, ни сегменты.
 pub const CDN_REFERER: &str = "https://kodikplayer.com/";
 
-/// Открывает страницу плеера в скрытом окне и возвращает URL манифеста.
+/// Возвращает URL манифеста по URL плеера.
 ///
-/// `preferred_quality` — желаемая высота кадра. Плеер стартует с низкого
-/// качества, поэтому пойманный манифест почти всегда 360p; нужное качество
-/// добирается подменой числа в имени файла (см. `upgrade_quality`).
+/// Сначала пробуется HTTP-тракт, при его отказе — вебвью. Порядок именно такой:
+/// HTTP отвечает за доли секунды и падает сразу, так что цена неудачной попытки
+/// заметно меньше, чем выигрыш в успешном случае.
+///
+/// `preferred_quality` — желаемая высота кадра. Ключи качеств у Kodik неточны, а
+/// вебвью и вовсе ловит стартовые 360p, поэтому в обоих случаях нужное качество
+/// добирается подменой числа в имени файла (см. [`upgrade_quality`]).
 #[tauri::command]
 pub async fn resolve_manifest(
     app: AppHandle,
     iframe_url: String,
     preferred_quality: Option<u32>,
 ) -> Result<String, String> {
+    let quality = preferred_quality.unwrap_or(DEFAULT_QUALITY);
+
+    let http_error = match crate::kodik::resolve(&iframe_url, quality).await {
+        Ok(manifest) => return Ok(manifest),
+        Err(error) => error,
+    };
+
     let mut last = String::new();
 
     // Плеер срывается на старте не так уж редко (реклама не догрузилась, клик
     // пришёлся в пустоту), и одна такая осечка роняла всю серию. Повтор стоит
     // минуты ожидания, перекачка — двадцати.
     for _ in 0..RESOLVE_ATTEMPTS {
-        match attempt_resolve(&app, &iframe_url, preferred_quality).await {
+        match attempt_resolve(&app, &iframe_url, quality).await {
             Ok(manifest) => return Ok(manifest),
             Err(error) => last = error,
         }
@@ -229,8 +240,13 @@ pub async fn resolve_manifest(
         // окне, а таймаут в 60 с сам по себе достаточная выдержка.
     }
 
-    Err(last)
+    // Причина отказа HTTP-тракта нужна в тексте: без неё непонятно, сломался ли
+    // он у всех разом (сменился эндпойнт) или спотыкается на одной серии.
+    Err(format!("{last} Быстрый резолв до этого не удался: {http_error}"))
 }
+
+/// Качество по умолчанию, если UI ничего не попросил.
+const DEFAULT_QUALITY: u32 = 720;
 
 /// Сколько раз пробовать, прежде чем признать серию нерезолвящейся.
 const RESOLVE_ATTEMPTS: u32 = 2;
@@ -238,12 +254,13 @@ const RESOLVE_ATTEMPTS: u32 = 2;
 async fn attempt_resolve(
     app: &AppHandle,
     iframe_url: &str,
-    preferred_quality: Option<u32>,
+    preferred_quality: u32,
 ) -> Result<String, String> {
     // Окно могло остаться от прерванной попытки — иначе build() упадёт на
     // конфликте label.
     if let Some(stale) = app.get_webview_window(RESOLVER_LABEL) {
         let _ = stale.destroy();
+        wait_for_label_release(app).await;
     }
 
     let url = iframe_url
@@ -279,7 +296,29 @@ async fn attempt_resolve(
 
     let manifest = outcome?;
 
-    Ok(upgrade_quality(manifest, preferred_quality.unwrap_or(720)).await)
+    Ok(upgrade_quality(manifest, preferred_quality).await)
+}
+
+/// Сколько ждать, пока метка окна освободится.
+const LABEL_RELEASE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Ждёт, пока Tauri действительно снимет окно с метки резолвера.
+///
+/// `destroy()` лишь просит цикл событий закрыть окно — метка держится ещё
+/// какое-то время. Без ожидания повтор падал мгновенно с «a webview with label
+/// `kodik-resolver` already exists», то есть `RESOLVE_ATTEMPTS` не работал
+/// вовсе: вторая попытка не доходила даже до загрузки страницы. Проявилось это
+/// только когда фолбэк начали прогонять целиком.
+async fn wait_for_label_release(app: &AppHandle) {
+    let deadline = std::time::Instant::now() + LABEL_RELEASE_TIMEOUT;
+
+    while std::time::Instant::now() < deadline {
+        if app.get_webview_window(RESOLVER_LABEL).is_none() {
+            return;
+        }
+
+        tokio::time::sleep(POLL_INTERVAL).await;
+    }
 }
 
 /// Подменяет качество в имени манифеста на лучшее доступное, не выше желаемого.
@@ -290,7 +329,7 @@ async fn attempt_resolve(
 ///
 /// Любая неудача — возврат исходного URL: качество хуже ожидаемого лучше, чем
 /// сорванная загрузка.
-async fn upgrade_quality(manifest: String, preferred: u32) -> String {
+pub(crate) async fn upgrade_quality(manifest: String, preferred: u32) -> String {
     let Some((prefix, suffix)) = split_quality(&manifest) else {
         return manifest;
     };
@@ -339,8 +378,18 @@ async fn is_playlist(client: &reqwest::Client, url: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Качество, зашитое в имя манифеста. У Kodik это единственный честный
+/// источник: ключи в ответе `/ftor` с содержимым расходятся.
+pub(crate) fn quality_of(manifest: &str) -> Option<u32> {
+    let (prefix, suffix) = split_quality(manifest)?;
+
+    manifest[prefix.len()..manifest.len() - suffix.len()]
+        .parse()
+        .ok()
+}
+
 /// Разрезает URL вокруг числа качества: `…/` + `360` + `.mp4:hls:manifest.m3u8`.
-fn split_quality(manifest: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_quality(manifest: &str) -> Option<(&str, &str)> {
     let marker = ".mp4:hls:";
     let marker_at = manifest.find(marker)?;
 
