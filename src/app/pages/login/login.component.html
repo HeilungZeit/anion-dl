@@ -1,0 +1,106 @@
+<div class="page">
+  <section class="card">
+    <header class="card__head">
+      <span class="card__badge" aria-hidden="true">
+        <tui-icon icon="@tui.user" />
+      </span>
+      <span class="card__eyebrow">Аккаунт anion</span>
+      <h1 class="card__title">Вход</h1>
+      <p class="card__hint">
+        Закладки, расписание и просмотренные серии подтянутся с сайта.
+      </p>
+    </header>
+
+    <form class="form" [formGroup]="form" (ngSubmit)="submit()">
+      @if (errorMessage()) {
+        <p class="banner" role="alert">
+          <tui-icon icon="@tui.circle-alert" />
+          <span>{{ errorMessage() }}</span>
+        </p>
+      }
+
+      <label class="field">
+        <span class="field__label">Почта</span>
+        <tui-textfield iconStart="@tui.mail" tuiTextfieldSize="m">
+          <input
+            formControlName="email"
+            placeholder="example@mail.com"
+            tuiInput
+            type="email"
+            autocomplete="username"
+          />
+        </tui-textfield>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Пароль</span>
+        <tui-textfield tuiTextfieldSize="m">
+          <input
+            formControlName="password"
+            placeholder="Введите пароль"
+            tuiInput
+            type="password"
+            autocomplete="current-password"
+          />
+        </tui-textfield>
+      </label>
+
+      @if (challenge(); as task) {
+        <div class="field">
+          <span class="field__label">Проверка от роботов</span>
+          <div class="captcha">
+            @if (challengeLoading()) {
+              <tui-loader size="s" />
+            } @else {
+              <strong class="captcha__question">{{ task.question }} =</strong>
+              <tui-textfield tuiTextfieldSize="m">
+                <input
+                  formControlName="captchaAnswer"
+                  inputmode="numeric"
+                  placeholder="Ответ"
+                  tuiInput
+                  type="text"
+                />
+              </tui-textfield>
+            }
+            <button
+              class="captcha__refresh"
+              type="button"
+              [disabled]="challengeLoading()"
+              (click)="refreshChallenge()"
+            >
+              Обновить
+            </button>
+          </div>
+        </div>
+      }
+
+      <button
+        class="button button--primary"
+        type="submit"
+        [disabled]="isLoading() || blockedFor() > 0"
+      >
+        @if (isLoading()) {
+          Входим…
+        } @else if (blockedFor() > 0) {
+          Повторить через {{ blockedLabel() }}
+        } @else {
+          Войти
+        }
+      </button>
+
+      <div class="links">
+        <button class="link" type="button" (click)="openResetPassword()">
+          Забыли пароль?
+        </button>
+        <button class="link" type="button" (click)="openSignUp()">
+          Создать аккаунт
+        </button>
+      </div>
+
+      <p class="note">
+        Регистрация и восстановление пароля открываются на сайте в браузере.
+      </p>
+    </form>
+  </section>
+</div>

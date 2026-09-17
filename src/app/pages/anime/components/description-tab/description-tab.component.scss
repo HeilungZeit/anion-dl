@@ -1,0 +1,307 @@
+:host {
+  display: block;
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+}
+
+// Композиция повторяет блок плеера на anion.online: панель управления над
+// кадром, а не вокруг него.
+.player-container {
+  position: relative;
+  display: flex;
+  inline-size: 100%;
+  flex-direction: column;
+  gap: var(--anion-space-16);
+}
+
+// Карточка управления: заголовок, селект и лента эпизодов на одной поверхности.
+.player-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-16);
+  padding: var(--anion-space-16);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-2xl);
+  background: var(--anion-bg-elevated);
+}
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--anion-space-12);
+}
+
+.episodes-info {
+  display: flex;
+  align-items: baseline;
+  gap: var(--anion-space-8);
+}
+
+.episodes-title {
+  color: var(--anion-text-primary);
+  font-size: var(--anion-font-size-18);
+  font-weight: 600;
+}
+
+.episodes-count {
+  padding: var(--anion-space-2) var(--anion-space-8);
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-surface-3);
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+}
+
+.watch-progress {
+  display: flex;
+  min-inline-size: 180px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--anion-space-6);
+}
+
+.watch-progress-label {
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+}
+
+.watch-progress-track {
+  display: block;
+  overflow: hidden;
+  inline-size: 100%;
+  block-size: 4px;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-surface-5);
+}
+
+.watch-progress-bar {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--anion-positive);
+  transition: width var(--anion-duration-slow) ease;
+}
+
+.select-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--anion-space-10);
+}
+
+.select {
+  min-inline-size: 0;
+  max-inline-size: 420px;
+  flex: 1 1 280px;
+}
+
+// Лента в собственной рамке, утопленной в карточку. Отступы с запасом: иначе
+// свечение выбранной плитки и галочка срезались бы краем прокрутки.
+.episodes-wrapper {
+  position: relative;
+  overflow-x: auto;
+  inline-size: 100%;
+  padding: var(--anion-space-16) var(--anion-space-12) 18px;
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-lg);
+  background: rgb(0 0 0 / 25%);
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--anion-border-strong) transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    block-size: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background-color: var(--anion-text-disabled);
+
+    &:hover {
+      background-color: var(--anion-text-tertiary);
+    }
+  }
+
+  &::-webkit-scrollbar-track {
+    border-radius: 3px;
+    background: rgb(255 255 255 / 5%);
+  }
+}
+
+.episodes-scroll-container {
+  display: flex;
+  min-inline-size: min-content;
+  gap: var(--anion-space-10);
+}
+
+.episode-item {
+  position: relative;
+  display: flex;
+  min-inline-size: 54px;
+  block-size: 58px;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--anion-space-2);
+  padding: var(--anion-space-8) var(--anion-space-6);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-lg);
+  background: var(--anion-surface-2);
+  color: var(--anion-text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  outline: none;
+  transition: background-color var(--anion-duration-base) ease,
+    border-color var(--anion-duration-base) ease,
+    transform var(--anion-duration-base) ease,
+    box-shadow var(--anion-duration-base) ease;
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+
+  &:hover {
+    border-color: var(--anion-text-secondary);
+    background: rgb(255 255 255 / 9%);
+    transform: translateY(-2px);
+  }
+}
+
+.episode-label {
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-10);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.episode-number {
+  font-size: var(--anion-font-size-16);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.episode-status {
+  position: absolute;
+  inset-block-start: calc(var(--anion-space-6) * -1);
+  inset-inline-end: calc(var(--anion-space-6) * -1);
+  display: flex;
+  inline-size: 16px;
+  block-size: 16px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--anion-bg-elevated);
+  border-radius: var(--anion-radius-circle, 50%);
+  background: var(--anion-positive);
+  color: var(--anion-text-on-brand);
+  font-size: var(--anion-font-size-10);
+  line-height: 1;
+}
+
+.episode-item--watched {
+  border-color: rgb(34 197 94 / 50%);
+
+  .episode-number {
+    color: var(--anion-positive);
+  }
+}
+
+.episode-item--selected {
+  border-color: var(--anion-accent);
+  background: var(--anion-accent);
+  color: var(--anion-text-on-brand);
+  box-shadow: 0 6px 16px -6px var(--anion-accent);
+
+  .episode-label,
+  .episode-number {
+    color: var(--anion-text-on-brand);
+  }
+
+  .episode-number {
+    font-weight: 700;
+  }
+
+  .episode-status {
+    border-color: var(--anion-accent);
+  }
+
+  &:hover {
+    border-color: var(--anion-accent);
+    background: var(--anion-accent);
+    transform: translateY(-2px);
+  }
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-4);
+  padding: var(--anion-space-24);
+  border: 1px dashed var(--anion-border);
+  border-radius: var(--anion-radius-lg);
+  background: var(--anion-surface-1);
+  text-align: center;
+
+  strong {
+    font-size: var(--anion-font-size-16);
+  }
+
+  span {
+    color: var(--anion-text-tertiary);
+    font-size: var(--anion-font-size-13);
+  }
+}
+
+@media (max-width: 768px) {
+  .player-panel {
+    gap: var(--anion-space-12);
+    padding: var(--anion-space-12);
+    border-radius: var(--anion-radius-lg);
+  }
+
+  .watch-progress {
+    inline-size: 100%;
+    align-items: stretch;
+  }
+
+  .select-wrapper {
+    flex-direction: column;
+    gap: var(--anion-space-8);
+  }
+
+  .select {
+    max-inline-size: 100%;
+    flex: 0 0 auto;
+  }
+
+  .episodes-wrapper {
+    padding: 14px var(--anion-space-10) var(--anion-space-16);
+    border-radius: var(--anion-radius-md);
+  }
+
+  .episode-item {
+    min-inline-size: 46px;
+    block-size: 50px;
+    padding: var(--anion-space-6) var(--anion-space-4);
+    border-radius: var(--anion-radius-md);
+  }
+
+  .episode-label {
+    display: none;
+  }
+
+  .episode-number {
+    font-size: var(--anion-font-size-14);
+  }
+
+  .episode-status {
+    inline-size: 14px;
+    block-size: 14px;
+    font-size: 9px;
+  }
+}

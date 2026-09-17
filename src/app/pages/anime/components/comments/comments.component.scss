@@ -1,0 +1,206 @@
+:host {
+  display: block;
+  margin-block-start: var(--anion-space-32);
+}
+
+.comments {
+  padding: var(--anion-space-20);
+  border: 1px solid var(--anion-surface-4);
+  border-radius: var(--anion-radius-2xl);
+  background: var(--anion-surface-1);
+}
+
+.comments__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--anion-space-12);
+  margin-block-end: var(--anion-space-16);
+
+  h2 {
+    margin: 0;
+    font-size: var(--anion-font-size-18);
+    font-weight: 700;
+  }
+}
+
+.comments__sorts {
+  display: flex;
+  gap: var(--anion-space-4);
+}
+
+.sort {
+  padding: var(--anion-space-6) var(--anion-space-12);
+  border: 1px solid transparent;
+  border-radius: var(--anion-radius-pill);
+  background: none;
+  color: var(--anion-text-tertiary);
+  cursor: pointer;
+  font-size: var(--anion-font-size-12);
+  font-weight: 600;
+  outline: none;
+  transition: background var(--anion-duration-base) ease,
+    color var(--anion-duration-base) ease;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-surface-3);
+    color: var(--anion-text-primary);
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring-inset);
+  }
+}
+
+.sort--active {
+  background: var(--anion-accent-a15);
+  color: var(--anion-accent-text);
+}
+
+.comments__state {
+  margin: 0;
+  color: var(--anion-text-tertiary);
+  font-size: var(--anion-font-size-13);
+}
+
+.comments__state--error {
+  color: var(--anion-negative-text);
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  gap: var(--anion-space-16);
+  padding: 0;
+  list-style: none;
+}
+
+.thread--nested {
+  margin-block-start: var(--anion-space-12);
+  padding-inline-start: var(--anion-space-12);
+  border-inline-start: 1px solid var(--anion-border-subtle);
+}
+
+.comment {
+  display: flex;
+  gap: var(--anion-space-10);
+}
+
+.comment__avatar {
+  inline-size: 34px;
+  block-size: 34px;
+  flex: 0 0 34px;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-surface-3);
+  object-fit: cover;
+}
+
+.comment__body {
+  min-inline-size: 0;
+  flex: 1;
+}
+
+.comment__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--anion-space-8);
+  font-size: var(--anion-font-size-12);
+
+  strong {
+    color: var(--anion-text-primary);
+    font-size: var(--anion-font-size-13);
+  }
+
+  time {
+    color: var(--anion-text-tertiary);
+  }
+}
+
+.comment__likes {
+  color: var(--anion-positive);
+}
+
+.comment__text {
+  margin: var(--anion-space-4) 0 0;
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.comment__deleted {
+  margin: var(--anion-space-4) 0 0;
+  color: var(--anion-text-disabled);
+  font-size: var(--anion-font-size-13);
+  font-style: italic;
+}
+
+.mention {
+  color: var(--anion-accent-text);
+}
+
+.spoiler {
+  padding: 0 var(--anion-space-6);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-xs);
+  background: var(--anion-surface-3);
+  color: var(--anion-text-tertiary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--anion-font-size-12);
+  outline: none;
+}
+
+.spoiler--open {
+  border-color: transparent;
+  background: var(--anion-surface-2);
+  color: var(--anion-text-secondary);
+  cursor: default;
+}
+
+.comment__replies {
+  margin-block-start: var(--anion-space-6);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--anion-accent-text);
+  cursor: pointer;
+  font-size: var(--anion-font-size-12);
+  outline: none;
+
+  &:hover,
+  &:focus-visible {
+    text-decoration: underline;
+  }
+}
+
+.comments__more {
+  display: block;
+  inline-size: 100%;
+  margin-block-start: var(--anion-space-16);
+  padding: var(--anion-space-10);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-md);
+  background: var(--anion-surface-2);
+  color: var(--anion-text-primary);
+  cursor: pointer;
+  font-size: var(--anion-font-size-13);
+  font-weight: 600;
+  outline: none;
+
+  &:hover:not(:disabled),
+  &:focus-visible:not(:disabled) {
+    border-color: var(--anion-accent-a60);
+    background: var(--anion-accent-a15);
+  }
+
+  &:disabled {
+    color: var(--anion-text-disabled);
+    cursor: default;
+  }
+}

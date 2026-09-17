@@ -8,6 +8,94 @@
   margin-inline: auto;
 }
 
+.section + .section {
+  margin-block-start: var(--anion-space-40);
+}
+
+.continue-row {
+  display: grid;
+  grid-auto-columns: minmax(270px, 360px);
+  grid-auto-flow: column;
+  gap: var(--anion-space-12);
+  overflow-x: auto;
+  padding-block-end: var(--anion-space-8);
+  scrollbar-width: thin;
+}
+
+.continue-card {
+  display: flex;
+  min-inline-size: 0;
+  overflow: hidden;
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-md);
+  background: var(--anion-bg-elevated);
+  color: inherit;
+  outline: none;
+  text-decoration: none;
+  transition: border-color var(--anion-duration-base) ease,
+    transform var(--anion-duration-base) ease;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--anion-accent-a45);
+    transform: translateY(-2px);
+  }
+}
+
+.continue-card__poster {
+  inline-size: 92px;
+  block-size: 128px;
+  flex: 0 0 auto;
+  object-fit: cover;
+}
+
+.continue-card__body {
+  display: flex;
+  min-inline-size: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: var(--anion-space-16);
+
+  strong {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: var(--anion-font-size-16);
+    line-height: 1.3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+.continue-card__meta {
+  margin-block-start: var(--anion-space-8);
+  overflow: hidden;
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.continue-card__position {
+  margin-block-start: var(--anion-space-4);
+  color: var(--anion-accent-text);
+  font-size: var(--anion-font-size-12);
+}
+
+.continue-card__progress {
+  block-size: 4px;
+  margin-block-start: auto;
+  overflow: hidden;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-border);
+
+  span {
+    display: block;
+    block-size: 100%;
+    border-radius: inherit;
+    background: var(--anion-accent);
+  }
+}
+
 .section__header {
   display: flex;
   align-items: flex-end;
@@ -81,6 +169,10 @@
 }
 
 @media (max-width: 560px) {
+  .continue-row {
+    grid-auto-columns: minmax(250px, 85vw);
+  }
+
   .section__header {
     align-items: center;
   }

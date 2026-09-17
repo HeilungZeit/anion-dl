@@ -1,0 +1,170 @@
+<div
+  class="player"
+  tabindex="0"
+  [class.player--fullscreen]="isFullscreen()"
+  [class.player--idle]="!controlsVisible()"
+  (keydown)="onKeydown($event)"
+  (pointerleave)="hideControlsSoon()"
+  (pointermove)="pokeControls()"
+>
+  <video
+    #video
+    class="player__video"
+    playsinline
+    [poster]="poster()"
+    (click)="togglePlay()"
+    (ended)="onEnded()"
+    (loadedmetadata)="onMetadata()"
+    (pause)="onPause()"
+    (play)="paused.set(false); pokeControls()"
+    (timeupdate)="onTimeUpdate()"
+    (volumechange)="onVolumeChange()"
+  ></video>
+
+  @if (status() === 'resolving') {
+    <div class="overlay">
+      <span class="overlay__spinner" aria-hidden="true"></span>
+      <p>Ищу поток…</p>
+    </div>
+  } @else if (status() === 'error') {
+    <div class="overlay overlay--error" role="alert">
+      <tui-icon icon="@tui.circle-alert" />
+      <p>{{ errorText() }}</p>
+      <button class="ghost ghost--outlined" type="button" (click)="retry()">
+        Повторить
+      </button>
+    </div>
+  } @else {
+    @if (paused()) {
+      <button
+        class="bigplay"
+        type="button"
+        aria-label="Воспроизвести"
+        (click)="togglePlay()"
+      >
+        <tui-icon icon="@tui.play" />
+      </button>
+    }
+
+    @if (skipHint(); as hint) {
+      <button class="skip" type="button" (click)="applySkip(hint)">
+        {{ hint.kind === 'opening' ? 'Пропустить опенинг' : 'Следующая серия' }}
+        <tui-icon icon="@tui.chevrons-right" />
+      </button>
+    }
+
+    <div class="bar">
+      <div
+        class="seek"
+        #seek
+        role="slider"
+        aria-label="Перемотка"
+        [attr.aria-valuemax]="duration()"
+        [attr.aria-valuemin]="0"
+        [attr.aria-valuenow]="position()"
+        (pointercancel)="scrubEnd($event, seek)"
+        (pointerdown)="scrubStart($event, seek)"
+        (pointermove)="scrubMove($event, seek)"
+        (pointerup)="scrubEnd($event, seek)"
+      >
+        <span class="seek__track"></span>
+        <span
+          class="seek__buffer"
+          [style.width.%]="duration() ? (bufferedTo() / duration()) * 100 : 0"
+        ></span>
+        <span
+          class="seek__fill"
+          [style.width.%]="duration() ? (position() / duration()) * 100 : 0"
+        ></span>
+      </div>
+
+      <div class="controls">
+        <button
+          class="ghost ghost--icon"
+          type="button"
+          [attr.aria-label]="paused() ? 'Воспроизвести' : 'Пауза'"
+          (click)="togglePlay()"
+        >
+          <tui-icon [icon]="paused() ? '@tui.play' : '@tui.pause'" />
+        </button>
+
+        <button
+          class="ghost ghost--icon"
+          type="button"
+          aria-label="Назад на 10 секунд"
+          (click)="seekBy(-10)"
+        >
+          <tui-icon icon="@tui.rotate-ccw" />
+        </button>
+
+        <button
+          class="ghost ghost--icon"
+          type="button"
+          aria-label="Вперёд на 10 секунд"
+          (click)="seekBy(10)"
+        >
+          <tui-icon icon="@tui.rotate-cw" />
+        </button>
+
+        <div class="volume">
+          <button
+            class="ghost ghost--icon"
+            type="button"
+            [attr.aria-label]="muted() ? 'Включить звук' : 'Выключить звук'"
+            (click)="toggleMuted()"
+          >
+            <tui-icon
+              [icon]="
+                muted() || volume() === 0 ? '@tui.volume-x' : '@tui.volume-2'
+              "
+            />
+          </button>
+          <input
+            class="volume__slider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            aria-label="Громкость"
+            [value]="muted() ? 0 : volume()"
+            (input)="onVolumeInput($event)"
+          />
+        </div>
+
+        <span class="time">
+          {{ formatTime(position()) }}
+          <span class="time__total">/ {{ formatTime(duration()) }}</span>
+        </span>
+
+        <details class="quality">
+          <summary class="ghost quality__trigger">
+            {{ actualQuality() ? actualQuality() + 'p' : 'Качество' }}
+          </summary>
+          <div class="quality__menu">
+            @for (option of qualities; track option) {
+              <button
+                class="quality__option"
+                type="button"
+                [class.quality__option--active]="requestedQuality() === option"
+                (click)="changeQuality(option)"
+              >
+                {{ option }}p
+              </button>
+            }
+          </div>
+        </details>
+
+        <button
+          class="ghost ghost--icon"
+          type="button"
+          [attr.aria-label]="
+            isFullscreen() ? 'Выйти из полного экрана' : 'Во весь экран'
+          "
+          (click)="toggleFullscreen()"
+        >
+          <tui-icon [icon]="isFullscreen() ? '@tui.minimize' : '@tui.maximize'" />
+        </button>
+      </div>
+    </div>
+  }
+</div>

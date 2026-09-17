@@ -2,14 +2,20 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  HostListener,
   inject,
   OnInit,
 } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { TuiIcon, TuiRoot } from '@taiga-ui/core';
 
+import { SITE_BASE_URL } from './api/api.config';
+import { BookmarksService } from './api/bookmarks.service';
 import { DownloadService } from './api/download.service';
+import { RemoteWatchProgressService } from './api/remote-watch-progress.service';
 import { UpdateService } from './api/update.service';
+import { UserService } from './api/user.service';
 
 @Component({
   selector: 'app-root',
@@ -20,6 +26,10 @@ import { UpdateService } from './api/update.service';
 })
 export class AppComponent implements OnInit {
   private readonly updates = inject(UpdateService);
+  private readonly users = inject(UserService);
+  private readonly bookmarks = inject(BookmarksService);
+  private readonly remoteProgress = inject(RemoteWatchProgressService);
+  private readonly router = inject(Router);
 
   // Сервис инжектится в шапке, а значит поднимается при старте приложения:
   // прерванная выходом очередь возобновляется сразу, а не когда пользователь
@@ -28,7 +38,46 @@ export class AppComponent implements OnInit {
 
   readonly pendingCount = computed(() => this.downloads.pending().length);
 
+  readonly isInitialized = this.users.isInitialized;
+  readonly isAuthenticated = this.users.isAuthenticated;
+  readonly displayName = this.users.displayName;
+  readonly email = computed(() => this.users.user()?.email ?? '');
+
+  /** Монограмма вместо аватарки: своих картинок у бэка нет. */
+  readonly monogram = computed(
+    () => this.displayName().charAt(0).toUpperCase() || '?'
+  );
+
   ngOnInit(): void {
     void this.updates.checkForUpdates();
+
+    // Сессия живёт в куке httpOnly, и увидеть её из JS нельзя. Единственный
+    // способ узнать, вошли мы или нет, — спросить бэк при старте.
+    void this.users.fetchUser();
+  }
+
+  /** Правка профиля живёт на сайте: в десктопе ей делать нечего. */
+  openProfile(): Promise<void> {
+    return openUrl(`${SITE_BASE_URL}/profile`);
+  }
+
+  async logout(): Promise<void> {
+    await this.users.logout();
+    this.bookmarks.clear();
+    this.remoteProgress.clear();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  openSearch(event: KeyboardEvent): void {
+    const target = event.target as HTMLElement | null;
+    if (
+      event.key !== '/' ||
+      target?.matches('input, textarea, select, [contenteditable="true"]')
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    void this.router.navigate(['/search']);
   }
 }

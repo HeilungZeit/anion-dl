@@ -1,0 +1,335 @@
+:host {
+  display: block;
+}
+
+.player {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--anion-surface-4);
+  border-radius: var(--anion-radius-xl);
+  background: #000;
+  outline: none;
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+// Полноэкранный режим складывается из двух частей: окно уходит в full screen
+// средствами ОС, а разметка растягивает плеер на это окно. Второе работает и
+// без разрешения на окно, поэтому кнопка не остаётся мёртвой.
+.player--fullscreen {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+}
+
+// Во время воспроизведения панель и курсор уходят, чтобы не закрывать кадр.
+.player--idle {
+  cursor: none;
+
+  .bar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(100%);
+  }
+}
+
+.player__video {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  cursor: pointer;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--anion-space-12);
+  background: rgb(0 0 0 / 62%);
+  color: var(--anion-text-primary);
+  font-size: var(--anion-font-size-14);
+  text-align: center;
+
+  p {
+    max-inline-size: 460px;
+    margin: 0;
+    padding-inline: var(--anion-space-16);
+  }
+}
+
+.overlay--error {
+  color: var(--anion-negative-text);
+
+  tui-icon {
+    font-size: 28px;
+  }
+}
+
+.overlay__spinner {
+  inline-size: 30px;
+  block-size: 30px;
+  border: 2px solid var(--anion-surface-5);
+  border-block-start-color: var(--anion-accent);
+  border-radius: var(--anion-radius-pill);
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.bigplay {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  display: grid;
+  inline-size: 76px;
+  block-size: 76px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: var(--anion-radius-pill);
+  background: rgb(0 0 0 / 52%);
+  color: #fff;
+  cursor: pointer;
+  outline: none;
+  backdrop-filter: blur(8px);
+  transform: translate(-50%, -50%);
+  transition: background var(--anion-duration-base) ease,
+    transform var(--anion-duration-base) ease;
+
+  tui-icon {
+    font-size: 30px;
+    // Треугольник визуально легче круга: без сдвига он кажется левее центра.
+    margin-inline-start: 4px;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-accent);
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+.skip {
+  position: absolute;
+  z-index: 3;
+  inset-block-end: 84px;
+  inset-inline-end: var(--anion-space-20);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--anion-space-6);
+  padding: var(--anion-space-10) var(--anion-space-16);
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: var(--anion-radius-pill);
+  background: rgb(0 0 0 / 66%);
+  color: #fff;
+  cursor: pointer;
+  font-size: var(--anion-font-size-13);
+  font-weight: 600;
+  outline: none;
+  backdrop-filter: blur(6px);
+  transition: background var(--anion-duration-base) ease;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-accent);
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+.bar {
+  position: absolute;
+  z-index: 2;
+  inset-block-end: 0;
+  inset-inline: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-4);
+  padding: var(--anion-space-32) var(--anion-space-12) var(--anion-space-10);
+  // Затемнение снизу: без него белые подписи теряются на светлом кадре.
+  background: linear-gradient(to top, rgb(0 0 0 / 82%), rgb(0 0 0 / 0%));
+  opacity: 1;
+  transition: opacity var(--anion-duration-base) ease,
+    transform var(--anion-duration-base) ease;
+  transform: translateY(0);
+}
+
+.seek {
+  position: relative;
+  block-size: 16px;
+  cursor: pointer;
+  touch-action: none;
+
+  span {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 0;
+    block-size: 4px;
+    border-radius: var(--anion-radius-pill);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+}
+
+.seek__track {
+  inline-size: 100%;
+  background: rgb(255 255 255 / 26%);
+}
+
+.seek__buffer {
+  background: rgb(255 255 255 / 44%);
+}
+
+.seek__fill {
+  background: linear-gradient(90deg, var(--anion-accent), #38bdf8);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-4);
+}
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--anion-space-6) var(--anion-space-10);
+  border: 1px solid transparent;
+  border-radius: var(--anion-radius-sm);
+  background: none;
+  color: rgb(255 255 255 / 82%);
+  cursor: pointer;
+  font-size: var(--anion-font-size-13);
+  font-weight: 600;
+  list-style: none;
+  outline: none;
+  transition: background var(--anion-duration-base) ease,
+    color var(--anion-duration-base) ease;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: rgb(255 255 255 / 14%);
+    color: #fff;
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring-inset);
+  }
+}
+
+.ghost--outlined {
+  border-color: var(--anion-border-strong);
+}
+
+.ghost--icon {
+  inline-size: 34px;
+  block-size: 34px;
+  padding: 0;
+
+  tui-icon {
+    font-size: var(--anion-icon-18);
+  }
+}
+
+.volume {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-4);
+}
+
+.volume__slider {
+  inline-size: 88px;
+  accent-color: var(--anion-accent);
+  cursor: pointer;
+}
+
+.time {
+  margin-inline-start: var(--anion-space-4);
+  color: #fff;
+  font-size: var(--anion-font-size-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.time__total {
+  color: rgb(255 255 255 / 58%);
+}
+
+.quality {
+  position: relative;
+  margin-inline-start: auto;
+}
+
+.quality__trigger {
+  min-inline-size: 62px;
+}
+
+.quality__menu {
+  position: absolute;
+  z-index: 5;
+  inset-block-end: calc(100% + var(--anion-space-6));
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--anion-space-4);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-md);
+  background: var(--anion-bg-elevated);
+  box-shadow: var(--anion-shadow-card-hover);
+}
+
+.quality__option {
+  padding: var(--anion-space-6) var(--anion-space-16);
+  border: none;
+  border-radius: var(--anion-radius-sm);
+  background: none;
+  color: var(--anion-text-secondary);
+  cursor: pointer;
+  font-size: var(--anion-font-size-13);
+  outline: none;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-surface-3);
+    color: var(--anion-text-primary);
+  }
+}
+
+.quality__option--active {
+  color: var(--anion-accent-text);
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay__spinner {
+    animation: none;
+  }
+
+  .bar,
+  .bigplay {
+    transition: none;
+  }
+}

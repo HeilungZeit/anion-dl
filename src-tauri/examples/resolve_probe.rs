@@ -19,9 +19,7 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 let started = std::time::Instant::now();
 
-                let quality = std::env::args()
-                    .nth(2)
-                    .and_then(|value| value.parse().ok());
+                let quality = std::env::args().nth(2).and_then(|value| value.parse().ok());
 
                 match anion_dl_lib::resolver::resolve_manifest(handle.clone(), url, quality).await {
                     Ok(manifest) => {

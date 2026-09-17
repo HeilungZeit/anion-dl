@@ -1,8 +1,9 @@
-# anion-dl
+# Anion Flow
 
-Десктопная качалка серий для anion: Angular 22 + Taiga UI 5 в оболочке Tauri 2.
-Получает каталог из `https://anion.online/api`, резолвит HLS-поток Kodik в скрытом
-webview и собирает MP4 через встроенный минимальный LGPL ffmpeg.
+Десктопное приложение anion для просмотра и скачивания аниме: собственный
+HLS-плеер, аккаунт и закладки, локальное «Продолжить смотреть» с восстановлением
+позиции и загрузка серий в MP4 для офлайна. Angular 22 + Taiga UI 5 в оболочке
+Tauri 2; MP4 собирается встроенным минимальным LGPL ffmpeg без перекодирования.
 
 Перед изменениями прочитайте [AGENT.md](AGENT.md). История решений и проверок —
 в [PLAN.md](PLAN.md).
@@ -33,7 +34,7 @@ bun run tauri dev
 bun run tauri build --bundles dmg
 ```
 
-Результат: `src-tauri/target/release/bundle/dmg/anion-dl_0.1.1_aarch64.dmg`.
+Результат: `src-tauri/target/release/bundle/dmg/Anion Flow_1.0.0_aarch64.dmg`.
 Приложение подписывается ad-hoc; для распространения без предупреждений
 Gatekeeper потребуются Developer ID Application и нотарификация Apple.
 
@@ -48,3 +49,20 @@ git push origin app-v0.1.1
 
 GitHub Actions соберёт macOS ARM/Intel, Windows x64 и Linux x64, после чего
 создаст GitHub Release и обновит постоянные ссылки выше.
+
+## Название и иконка
+
+Пользовательское название — **Anion Flow**. Технические идентификаторы
+`anion-dl` (bundle ID, Cargo/npm, заголовок API и адреса релизов) сохранены
+для совместимости с установленными версиями и сервером.
+
+Векторный исходник иконки — `src-tauri/icons/app-icon.svg`, адаптация
+`anion/src/app/icons/logo.component.html`: портрет и красная луна с фронта,
+скруглённая форма и знак воспроизведения. PNG используется также в шапке и favicon.
+Перегенерация всех размеров:
+
+```bash
+bun run tauri icon src-tauri/icons/app-icon.svg --output /tmp/anion-flow-icon --png 1024
+cp /tmp/anion-flow-icon/1024x1024.png src-tauri/icons/app-icon.png
+bun run tauri icon src-tauri/icons/app-icon.png
+```

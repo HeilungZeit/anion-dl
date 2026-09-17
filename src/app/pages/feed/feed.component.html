@@ -1,9 +1,63 @@
 @if (feed.isLoading()) {
   <tui-loader size="l" />
 } @else if (feed.error()) {
-  <p class="error">Не удалось загрузить фид: {{ feed.error() }}</p>
+  <p class="error">Не удалось загрузить фид: {{ feed.error()?.message }}</p>
 } @else if (feed.value(); as data) {
   <div class="page">
+    @if (watchProgress.continueWatching(); as records) {
+      @if (records.length > 0) {
+        <section class="section section--continue">
+          <header class="section__header">
+            <div class="section__heading">
+              <span class="section__accent" aria-hidden="true"></span>
+              <div>
+                <h1>Продолжить смотреть</h1>
+                <p>Недавние серии с сохранённой позицией</p>
+              </div>
+            </div>
+          </header>
+
+          <div class="continue-row">
+            @for (record of records; track record.animeId) {
+              <a
+                class="continue-card"
+                [routerLink]="['/anime', record.animeId]"
+                [queryParams]="{
+                  episode: record.episode,
+                  dubbing: record.dubbing,
+                }"
+              >
+                <img
+                  class="continue-card__poster"
+                  [src]="record.poster.medium || record.poster.big"
+                  [alt]="record.title"
+                />
+                <span class="continue-card__body">
+                  <strong>{{ record.title }}</strong>
+                  <span class="continue-card__meta">
+                    Серия {{ record.episode }} · {{ record.dubbing }}
+                  </span>
+                  <span class="continue-card__position">
+                    Продолжить с {{ formatPosition(record.positionSecs) }}
+                  </span>
+                  <span class="continue-card__progress" aria-hidden="true">
+                    <span
+                      [style.width.%]="
+                        progressPercent(
+                          record.positionSecs,
+                          record.durationSecs
+                        )
+                      "
+                    ></span>
+                  </span>
+                </span>
+              </a>
+            }
+          </div>
+        </section>
+      }
+    }
+
     <section class="section">
       <header class="section__header">
         <div class="section__heading">

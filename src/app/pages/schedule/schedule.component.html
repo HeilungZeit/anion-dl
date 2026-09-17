@@ -1,0 +1,40 @@
+<div class="page">
+  <header class="hero">
+    <span>Ваши онгоинги</span>
+    <h1>Расписание выхода</h1>
+    <p>Новые эпизоды из списков «Смотрю» и «Буду смотреть»</p>
+  </header>
+
+  @if (calendar.isLoading()) {
+    <div class="state"><tui-loader size="l" /></div>
+  } @else if (calendar.error()) {
+    <p class="state state--error">Не удалось загрузить расписание: {{ calendar.error()?.message }}</p>
+  } @else {
+    <div class="calendar">
+      @for (group of groups(); track group.key) {
+        <section class="day" [class.day--today]="group.label === 'Сегодня'">
+          <header><h2>{{ group.label }}</h2><span>{{ group.entries.length }}</span></header>
+          <div class="day__entries">
+            @for (entry of group.entries; track entry.animeId) {
+              <a class="entry" [routerLink]="['/anime', entry.animeId]">
+                <img [src]="entry.poster.medium || entry.poster.big" [alt]="entry.title" />
+                <span class="entry__body">
+                  <strong>{{ entry.title }}</strong>
+                  <span>{{ episodeLabel(entry) }}</span>
+                  <time>{{ timeLabel(entry.nextEpisodeDate) }}</time>
+                </span>
+                <span aria-hidden="true">→</span>
+              </a>
+            }
+          </div>
+        </section>
+      } @empty {
+        <div class="state state--empty">
+          <strong>Расписание пока пусто</strong>
+          <span>Добавьте онгоинги в «Смотрю» или «Буду смотреть».</span>
+          <a routerLink="/bookmarks/watching">Открыть закладки</a>
+        </div>
+      }
+    </div>
+  }
+</div>

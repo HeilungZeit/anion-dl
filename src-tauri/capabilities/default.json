@@ -2,9 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen",
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "opener:allow-open-path",
@@ -26,7 +30,9 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://anion.online/*" }
+        {
+          "url": "https://anion.online/*"
+        }
       ]
     }
   ]

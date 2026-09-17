@@ -1,0 +1,80 @@
+:host {
+  display: block;
+}
+
+.bookmark {
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-8);
+}
+
+.bookmark__trigger {
+  inline-size: 100%;
+  justify-content: space-between;
+  font-size: var(--anion-font-size-14);
+}
+
+.bookmark__menu {
+  display: flex;
+  min-inline-size: 220px;
+  flex-direction: column;
+  padding-block: var(--anion-space-6);
+}
+
+.bookmark__item {
+  display: flex;
+  min-block-size: 40px;
+  inline-size: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--anion-space-10);
+  padding: var(--anion-space-8) var(--anion-space-16);
+  border: 0;
+  background: transparent;
+  color: var(--anion-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--anion-font-size-14);
+  text-align: start;
+  transition: background-color var(--anion-duration-fast) ease,
+    color var(--anion-duration-fast) ease;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-surface-3);
+    color: var(--anion-text-primary);
+    outline: none;
+  }
+
+  &--active {
+    color: var(--anion-accent-text);
+    font-weight: 600;
+  }
+
+  tui-icon {
+    flex: 0 0 auto;
+    font-size: var(--anion-icon-16);
+  }
+}
+
+.bookmark__divider {
+  block-size: 1px;
+  margin-block: var(--anion-space-4);
+  background: var(--anion-border-subtle);
+}
+
+.bookmark__item--remove {
+  justify-content: flex-start;
+  color: var(--anion-negative-text);
+
+  &:hover,
+  &:focus-visible {
+    background: rgb(255 80 80 / 10%);
+    color: var(--anion-negative-text);
+  }
+}
+
+small {
+  color: var(--anion-negative-text);
+  line-height: 1.35;
+}

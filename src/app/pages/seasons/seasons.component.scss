@@ -1,0 +1,12 @@
+:host { display: block; }
+.page { max-inline-size: var(--anion-container-max); margin-inline: auto; }
+header span { color: var(--anion-accent-text); font-size: var(--anion-font-size-12); text-transform: uppercase; }
+header h1 { margin: var(--anion-space-6) 0 var(--anion-space-20); }
+.controls { display: flex; flex-wrap: wrap; gap: var(--anion-space-12); margin-block-end: var(--anion-space-24); }
+.controls nav { display: flex; gap: var(--anion-space-6); }
+select, button { padding: var(--anion-space-8) var(--anion-space-12); border: 1px solid var(--anion-border); border-radius: var(--anion-radius-md); background: var(--anion-surface-2); color: inherit; font: inherit; }
+button { cursor: pointer; }
+button.active { border-color: var(--anion-accent-a45); background: var(--anion-accent-a15); color: var(--anion-accent-text); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--anion-space-20) var(--anion-space-12); }
+.state { grid-column: 1 / -1; display: grid; min-block-size: 180px; place-items: center; color: var(--anion-text-secondary); }
+.state--error { color: var(--anion-negative-text); }

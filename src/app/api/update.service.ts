@@ -13,7 +13,7 @@ export class UpdateService {
     if (!update) return;
 
     const accepted = await confirm(`Доступна версия ${update.version}. Установить обновление?`, {
-      title: 'Обновление anion-dl',
+      title: 'Обновление Anion Flow',
       kind: 'info',
       okLabel: 'Установить',
       cancelLabel: 'Позже',
@@ -28,10 +28,10 @@ export class UpdateService {
       await update.downloadAndInstall();
       await relaunch();
     } catch (error: unknown) {
-      console.error('Не удалось установить обновление anion-dl', error);
+      console.error('Не удалось установить обновление Anion Flow', error);
       await update.close();
       await message('Не удалось скачать или установить обновление. Попробуйте позже.', {
-        title: 'Обновление anion-dl',
+        title: 'Обновление Anion Flow',
         kind: 'error',
       });
     }
@@ -42,7 +42,7 @@ export class UpdateService {
       return await check({ timeout: 10_000 });
     } catch (error: unknown) {
       // Отсутствие сети не должно мешать обычному запуску приложения.
-      console.warn('Не удалось проверить обновления anion-dl', error);
+      console.warn('Не удалось проверить обновления Anion Flow', error);
       return null;
     }
   }

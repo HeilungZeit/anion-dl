@@ -11,6 +11,7 @@ pub fn run() {
         .manage(download::Downloads::default())
         .invoke_handler(tauri::generate_handler![
             resolver::resolve_manifest,
+            resolver::change_manifest_quality,
             download::download_episode,
             download::cancel_download,
             files::probe_files

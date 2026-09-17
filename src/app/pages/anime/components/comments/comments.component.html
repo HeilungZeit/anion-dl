@@ -1,0 +1,165 @@
+<section class="comments">
+  <header class="comments__head">
+    <h2>Комментарии</h2>
+
+    <div class="comments__sorts" role="group" aria-label="Сортировка">
+      <button
+        class="sort"
+        type="button"
+        [class.sort--active]="sort() === 'new'"
+        (click)="changeSort('new')"
+      >
+        Новые
+      </button>
+      <button
+        class="sort"
+        type="button"
+        [class.sort--active]="sort() === 'nice'"
+        (click)="changeSort('nice')"
+      >
+        Лучшие
+      </button>
+      <button
+        class="sort"
+        type="button"
+        [class.sort--active]="sort() === 'old'"
+        (click)="changeSort('old')"
+      >
+        Старые
+      </button>
+    </div>
+  </header>
+
+  @if (errorText()) {
+    <p class="comments__state comments__state--error">{{ errorText() }}</p>
+  } @else if (isLoading() && comments().length === 0) {
+    <p class="comments__state">Загружаю…</p>
+  } @else if (comments().length === 0) {
+    <p class="comments__state">Пока никто не написал.</p>
+  } @else {
+    <ul class="thread">
+      @for (comment of comments(); track comment.id) {
+        <li class="comment">
+          <img
+            class="comment__avatar"
+            alt=""
+            loading="lazy"
+            [src]="comment.avatars.small"
+          />
+
+          <div class="comment__body">
+            <div class="comment__meta">
+              <strong>{{ comment.name }}</strong>
+              <time>{{ formatTime(comment.time) }}</time>
+              @if (comment.likes > 0) {
+                <span class="comment__likes">▲ {{ comment.likes }}</span>
+              }
+            </div>
+
+            @if (comment.deletedAt > 0) {
+              <p class="comment__deleted">Комментарий удалён</p>
+            } @else {
+              <p class="comment__text" data-selectable="true">
+                @for (part of parts(comment); track $index) {
+                  @switch (part.kind) {
+                    @case ('mention') {
+                      <span class="mention">&#64;{{ part.content }}</span>
+                    }
+                    @case ('spoiler') {
+                      @if (isRevealed(comment, part)) {
+                        <span class="spoiler spoiler--open">{{
+                          part.content
+                        }}</span>
+                      } @else {
+                        <button
+                          class="spoiler"
+                          type="button"
+                          (click)="reveal(comment, part)"
+                        >
+                          Спойлер
+                        </button>
+                      }
+                    }
+                    @default {
+                      <span>{{ part.content }}</span>
+                    }
+                  }
+                }
+              </p>
+            }
+
+            @if (comment.childrenCount > 0) {
+              <button
+                class="comment__replies"
+                type="button"
+                (click)="toggleThread(comment)"
+              >
+                {{ isThreadOpen(comment) ? 'Скрыть ответы' : 'Ответы' }} ·
+                {{ comment.childrenCount }}
+              </button>
+            }
+
+            @if (isThreadOpen(comment)) {
+              <ul class="thread thread--nested">
+                @for (reply of replies().get(comment.id) ?? []; track reply.id) {
+                  <li class="comment">
+                    <img
+                      class="comment__avatar"
+                      alt=""
+                      loading="lazy"
+                      [src]="reply.avatars.small"
+                    />
+                    <div class="comment__body">
+                      <div class="comment__meta">
+                        <strong>{{ reply.name }}</strong>
+                        <time>{{ formatTime(reply.time) }}</time>
+                      </div>
+                      <p class="comment__text" data-selectable="true">
+                        @for (part of parts(reply); track $index) {
+                          @switch (part.kind) {
+                            @case ('mention') {
+                              <span class="mention">&#64;{{ part.content }}</span>
+                            }
+                            @case ('spoiler') {
+                              @if (isRevealed(reply, part)) {
+                                <span class="spoiler spoiler--open">{{
+                                  part.content
+                                }}</span>
+                              } @else {
+                                <button
+                                  class="spoiler"
+                                  type="button"
+                                  (click)="reveal(reply, part)"
+                                >
+                                  Спойлер
+                                </button>
+                              }
+                            }
+                            @default {
+                              <span>{{ part.content }}</span>
+                            }
+                          }
+                        }
+                      </p>
+                    </div>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        </li>
+      }
+    </ul>
+
+    @if (hasMore()) {
+      <button
+        class="comments__more"
+        type="button"
+        [disabled]="isLoading()"
+        (click)="loadMore()"
+      >
+        {{ isLoading() ? 'Загружаю…' : 'Показать ещё' }}
+      </button>
+    }
+  }
+</section>

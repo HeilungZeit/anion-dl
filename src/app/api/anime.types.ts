@@ -239,3 +239,26 @@ export interface AnimeQuery {
   offset?: number;
   limit?: number;
 }
+
+export interface CommentAvatars {
+  small: string;
+  big: string;
+  full: string;
+}
+
+/** Комментарий к тайтлу. `time` и `deletedAt` — unix-секунды, не миллисекунды. */
+export interface Comment {
+  avatars: CommentAvatars;
+  text: string;
+  id: number;
+  name: string;
+  childrenCount: number;
+  deletedAt: number;
+  dislikes: number;
+  likes: number;
+  time: number;
+  parentId: number;
+  roles: string[];
+  userId: number;
+  vote: number;
+}

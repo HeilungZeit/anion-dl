@@ -1,0 +1,351 @@
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  output,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { TuiDataList, TuiTextfield } from '@taiga-ui/core';
+import { TuiChevron, TuiSelect } from '@taiga-ui/kit';
+
+import type { Anime, Video } from '../../../../api/anime.types';
+import {
+  latestAvailableWatchedEpisode,
+  RemoteWatchProgressService,
+} from '../../../../api/remote-watch-progress.service';
+import { UserService } from '../../../../api/user.service';
+import { WatchProgressService } from '../../../../api/watch-progress.service';
+import {
+  type PlaybackProgress,
+  VideoPlayerComponent,
+} from '../../../../player/video-player.component';
+import { CommentsComponent } from '../comments/comments.component';
+
+/** Субтитры и озвучки бэк отдаёт вперемешку, различаются только подписью. */
+const SUBTITLES_PREFIX = 'субтитры';
+
+/**
+ * Вкладка «Просмотр»: панель эпизодов, плеер и комментарии.
+ *
+ * Композиция и логика повторяют блок плеера на anion.online — панель над
+ * кадром, группы «Озвучки»/«Субтитры» с числом серий, полоса просмотра и лента
+ * эпизодов. Отличий два: серия играет своим плеером вместо iframe Kodik, и нет
+ * выбора плеера — приложение умеет только Kodik, и список из одного пункта был
+ * бы шумом.
+ */
+@Component({
+  selector: 'app-description-tab',
+  imports: [
+    CommentsComponent,
+    FormsModule,
+    TuiChevron,
+    TuiDataList,
+    TuiSelect,
+    TuiTextfield,
+    VideoPlayerComponent,
+  ],
+  templateUrl: './description-tab.component.html',
+  styleUrl: './description-tab.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class DescriptionTabComponent {
+  private readonly localProgress = inject(WatchProgressService);
+  private readonly remoteProgress = inject(RemoteWatchProgressService);
+  private readonly users = inject(UserService);
+  readonly progressInitialized = this.localProgress.isInitialized;
+
+  readonly anime = input.required<Anime>();
+  /** Все серии Kodik: нужны, чтобы считать эпизоды по каждой озвучке. */
+  readonly videos = input.required<readonly Video[]>();
+  readonly episodes = input.required<readonly Video[]>();
+  readonly dubbings = input.required<readonly string[]>();
+  readonly dubbing = input.required<string>();
+  /** Номер серии из адреса: сюда ведёт ряд «Продолжить смотреть». */
+  readonly requestedEpisode = input<number>();
+
+  /** Серверные отметки относятся к аниме целиком, а не к одной озвучке. */
+  readonly watched = computed<ReadonlySet<number>>(
+    () => new Set(
+      this.remoteProgress.episodesFor(
+        this.anime().animeId,
+        this.users.user()?.id ?? null
+      )
+    )
+  );
+
+  readonly dubbingChange = output<string>();
+
+  readonly selectedEpisode = signal<Video | null>(null);
+
+  /** Озвучки и субтитры показываются отдельными группами, как на фронте. */
+  readonly dubbersData = computed(() => {
+    const all = this.dubbings();
+
+    return {
+      dubbers: all.filter(
+        (name) => !name.toLowerCase().startsWith(SUBTITLES_PREFIX)
+      ),
+      subtitles: all.filter((name) =>
+        name.toLowerCase().startsWith(SUBTITLES_PREFIX)
+      ),
+    };
+  });
+
+  private readonly countByDubbing = computed(() => {
+    const counts = new Map<string, number>();
+
+    for (const video of this.videos()) {
+      const name = video.data.dubbing;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+
+    return counts;
+  });
+
+  readonly watchedCount = computed(() => {
+    const seen = this.watched();
+
+    return this.episodes().filter((video) => seen.has(Number(video.number)))
+      .length;
+  });
+
+  readonly watchedPercent = computed(() => {
+    const total = this.episodes().length;
+
+    return total === 0 ? 0 : Math.round((this.watchedCount() / total) * 100);
+  });
+
+  readonly isLastEpisode = computed(() => {
+    const current = this.selectedEpisode();
+
+    return (
+      current !== null && this.episodes().at(-1)?.videoId === current.videoId
+    );
+  });
+
+  /**
+   * Заставка до первого нажатия.
+   *
+   * Постер тайтла вертикальный, и в кадре 16:9 он встал бы узкой полосой между
+   * чёрных полей. Кадр из серии — уже нужных пропорций, поэтому берём его, а
+   * постер оставляем запасным вариантом.
+   */
+  readonly preview = computed(
+    () =>
+      this.anime().randomScreenshots?.[0]?.sizes.full ?? this.anime().poster.big
+  );
+
+  readonly startPositionSecs = computed(() => {
+    const episode = this.selectedEpisode();
+
+    return episode
+      ? this.localProgress.resumePosition(
+          this.anime().animeId,
+          Number(episode.number),
+          episode.data.dubbing
+        )
+      : 0;
+  });
+
+  private readonly stripRef = viewChild<ElementRef<HTMLElement>>('strip');
+  private appliedRequestedEpisode: number | undefined;
+  private appliedRemoteDefault = false;
+  private selectionWasExplicit = false;
+
+  constructor() {
+    // Только чтение серверных отметок. Локальную позицию сюда не переносим и
+    // отсутствие записи на бэке локальными данными не подменяем.
+    effect(() => {
+      const initialized = this.users.isInitialized();
+      const userId = this.users.user()?.id;
+      const animeId = this.anime().animeId;
+
+      untracked(() => {
+        if (!initialized || userId === undefined) {
+          return;
+        }
+
+        void this.remoteProgress
+          .ensureLoaded(animeId, userId)
+          .catch(() => undefined);
+      });
+    });
+
+    // Серия переставляется при смене озвучки и при загрузке списка. Правило
+    // взято с фронта: держимся того же номера, а если его в новой озвучке нет
+    // — падаем на первую серию. Иначе переключение озвучки сбрасывало бы
+    // зрителя в начало сезона.
+    effect(() => {
+      const list = this.episodes();
+      const requested = this.requestedEpisode();
+      const watched = this.watched();
+
+      untracked(() => {
+        if (list.length === 0) {
+          this.selectedEpisode.set(null);
+          return;
+        }
+
+        // Параметр из URL применяется один раз и после этого не перебивает
+        // ручной выбор серии.
+        if (
+          requested !== undefined &&
+          requested !== this.appliedRequestedEpisode
+        ) {
+          const fromUrl = list.find(
+            (video) => Number(video.number) === requested
+          );
+
+          if (fromUrl) {
+            this.appliedRequestedEpisode = requested;
+            this.appliedRemoteDefault = true;
+            this.selectedEpisode.set(fromUrl);
+            return;
+          }
+        }
+
+        // При обычном открытии тайтла серверный прогресс приезжает позже
+        // списка серий. Один раз переставляем выбор на последнюю просмотренную,
+        // но не перебиваем параметр из URL или уже сделанный человеком выбор.
+        if (!this.appliedRemoteDefault && !this.selectionWasExplicit) {
+          const latest = latestAvailableWatchedEpisode(
+            list.map((video) => Number(video.number)),
+            watched
+          );
+
+          if (latest !== null) {
+            const fromRemote = list.find(
+              (video) => Number(video.number) === latest
+            );
+
+            if (fromRemote) {
+              this.appliedRemoteDefault = true;
+              this.selectedEpisode.set(fromRemote);
+              return;
+            }
+          }
+        }
+
+        const current = this.selectedEpisode();
+        const same = current
+          ? list.find((video) => video.number === current.number)
+          : undefined;
+
+        this.selectedEpisode.set(same ?? list[0]);
+      });
+    });
+
+    // Лента прокручивается вбок, и у длинного сезона текущая серия оказывается
+    // за краем — особенно после перехода на следующую.
+    effect(() => {
+      this.selectedEpisode();
+      untracked(() => this.revealSelected());
+    });
+
+    afterNextRender(() => this.revealSelected());
+
+    inject(DestroyRef).onDestroy(() => {
+      void this.localProgress.flush().catch(() => undefined);
+    });
+  }
+
+  saveProgress(progress: PlaybackProgress): void {
+    const episode = this.videos().find(
+      (video) => video.iframeUrl === progress.iframeUrl
+    );
+    if (!episode) {
+      return;
+    }
+
+    this.localProgress.record({
+      animeId: this.anime().animeId,
+      title: this.anime().title,
+      poster: this.anime().poster,
+      episode: Number(episode.number),
+      dubbing: episode.data.dubbing,
+      positionSecs: progress.positionSecs,
+      durationSecs: progress.durationSecs,
+    });
+  }
+
+  saveAndFlush(progress: PlaybackProgress): void {
+    this.saveProgress(progress);
+    void this.localProgress.flush().catch(() => undefined);
+  }
+
+  markEnded(progress: PlaybackProgress): void {
+    this.saveAndFlush({
+      iframeUrl: progress.iframeUrl,
+      positionSecs: progress.durationSecs,
+      durationSecs: progress.durationSecs,
+    });
+  }
+
+  dubbingLabel(name: string): string {
+    const count = this.countByDubbing().get(name) ?? 0;
+
+    return count > 0 ? `${name} (${count} эп.)` : name;
+  }
+
+  select(episode: Video): void {
+    this.selectionWasExplicit = true;
+    this.selectedEpisode.set(episode);
+  }
+
+  isSelected(episode: Video): boolean {
+    return this.selectedEpisode()?.videoId === episode.videoId;
+  }
+
+  isWatched(episode: Video): boolean {
+    return this.watched().has(Number(episode.number));
+  }
+
+  goToNextEpisode(): void {
+    const list = this.episodes();
+    const current = this.selectedEpisode();
+    if (!current) {
+      return;
+    }
+
+    const index = list.findIndex((video) => video.videoId === current.videoId);
+    const next = index >= 0 ? list[index + 1] : undefined;
+
+    if (next) {
+      this.selectionWasExplicit = true;
+      this.selectedEpisode.set(next);
+    }
+  }
+
+  /**
+   * Колесо мыши вертикальное, а лента горизонтальная: без перевода прокрутить
+   * её мышью нельзя вовсе.
+   */
+  onStripWheel(event: WheelEvent): void {
+    const strip = this.stripRef()?.nativeElement;
+
+    if (!strip || event.deltaY === 0 || event.shiftKey) {
+      return;
+    }
+
+    strip.scrollLeft += event.deltaY;
+    event.preventDefault();
+  }
+
+  private revealSelected(): void {
+    // Ждём отрисовки: до неё класс ещё на прошлой плитке.
+    queueMicrotask(() => {
+      this.stripRef()
+        ?.nativeElement.querySelector('.episode-item--selected')
+        ?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+  }
+}

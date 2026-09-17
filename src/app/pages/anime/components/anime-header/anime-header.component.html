@@ -1,0 +1,38 @@
+<header class="head">
+  <div class="head__side">
+    <div class="head__poster-wrap">
+      <img class="head__poster" [src]="anime().poster.big" [alt]="anime().title" />
+      <span class="head__status" [class.head__status--released]="anime().animeStatus.alias === 'released'">
+        {{ anime().animeStatus.title }}
+      </span>
+    </div>
+    <app-anime-sidebar [anime]="anime()" />
+  </div>
+
+  <div class="head__body">
+    <span class="head__eyebrow">Аниме {{ anime().year }}</span>
+    <h1 class="head__title" data-selectable="true">{{ anime().title }}</h1>
+
+    <div class="head__meta">
+      <span><small>Тип</small><strong>{{ anime().type.name }}</strong></span>
+      <i aria-hidden="true"></i>
+      <span><small>Эпизоды</small><strong>{{ anime().episodes?.aired }} из {{ anime().episodes?.count }}</strong></span>
+      <i aria-hidden="true"></i>
+      <span><small>Оценка</small><strong class="head__rating">★ {{ anime().rating.average.toFixed(1) }}</strong></span>
+      @if (anime().minAge.titleLong) {
+        <i aria-hidden="true"></i>
+        <span><small>Возраст</small><strong>{{ anime().minAge.titleLong }}</strong></span>
+      }
+    </div>
+
+    <p class="head__description">{{ anime().description }}</p>
+
+    @if (anime().genres.length > 0) {
+      <div class="head__genres">
+        @for (genre of anime().genres; track genre.id) {
+          <span>{{ genre.title }}</span>
+        }
+      </div>
+    }
+  </div>
+</header>

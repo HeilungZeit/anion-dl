@@ -17,4 +17,15 @@ export class ResolverService {
   resolveManifest(iframeUrl: string, preferredQuality: number): Promise<string> {
     return invoke<string>('resolve_manifest', { iframeUrl, preferredQuality });
   }
+
+  /** Меняет качество в уже подписанном URL без полного резолва Kodik. */
+  changeManifestQuality(
+    manifestUrl: string,
+    preferredQuality: number
+  ): Promise<string> {
+    return invoke<string>('change_manifest_quality', {
+      manifestUrl,
+      preferredQuality,
+    });
+  }
 }

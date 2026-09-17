@@ -242,7 +242,21 @@ pub async fn resolve_manifest(
 
     // Причина отказа HTTP-тракта нужна в тексте: без неё непонятно, сломался ли
     // он у всех разом (сменился эндпойнт) или спотыкается на одной серии.
-    Err(format!("{last} Быстрый резолв до этого не удался: {http_error}"))
+    Err(format!(
+        "{last} Быстрый резолв до этого не удался: {http_error}"
+    ))
+}
+
+/// Быстрая смена качества уже найденного потока.
+///
+/// Подпись общая для соседних манифестов, поэтому повторять GET страницы
+/// плеера и POST на эндпойнт ссылок не требуется.
+#[tauri::command]
+pub async fn change_manifest_quality(
+    manifest_url: String,
+    preferred_quality: Option<u32>,
+) -> Result<String, String> {
+    Ok(upgrade_quality(manifest_url, preferred_quality.unwrap_or(DEFAULT_QUALITY)).await)
 }
 
 /// Качество по умолчанию, если UI ничего не попросил.
@@ -337,10 +351,7 @@ pub(crate) async fn upgrade_quality(manifest: String, preferred: u32) -> String 
     // Таймаут обязателен: у reqwest его по умолчанию нет, и зависший узел CDN
     // застопорил бы задачу бессрочно — дедлайн вебвью к этому моменту уже
     // позади, ограничивать проверку больше нечему.
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-    {
+    let client = match crate::kodik::http_client() {
         Ok(client) => client,
         Err(_) => return manifest,
     };
@@ -348,7 +359,7 @@ pub(crate) async fn upgrade_quality(manifest: String, preferred: u32) -> String 
     for quality in QUALITY_LADDER.iter().filter(|item| **item <= preferred) {
         let candidate = format!("{prefix}{quality}{suffix}");
 
-        if is_playlist(&client, &candidate).await {
+        if is_playlist(client, &candidate).await {
             return candidate;
         }
     }

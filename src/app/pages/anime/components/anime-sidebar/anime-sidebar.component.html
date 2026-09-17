@@ -1,0 +1,49 @@
+<div class="bookmark">
+  <button
+    tuiButton
+    class="bookmark__trigger"
+    type="button"
+    appearance="secondary"
+    size="m"
+    iconEnd="@tui.chevron-down"
+    [disabled]="saving()"
+    [tuiDropdown]="bookmarkMenu"
+    [(tuiDropdownOpen)]="dropdownOpen"
+  >
+    {{ saving() ? 'Сохраняем…' : currentStatusLabel() }}
+  </button>
+
+  <ng-template #bookmarkMenu>
+    <div class="bookmark__menu">
+      @for (status of statuses; track status.value) {
+        <button
+          class="bookmark__item"
+          type="button"
+          [class.bookmark__item--active]="isActive(status.value)"
+          (click)="setStatus(status.value)"
+        >
+          <span>{{ status.label }}</span>
+          @if (isActive(status.value)) {
+            <tui-icon icon="@tui.check" aria-hidden="true" />
+          }
+        </button>
+      }
+
+      @if (bookmark()) {
+        <div class="bookmark__divider"></div>
+        <button
+          class="bookmark__item bookmark__item--remove"
+          type="button"
+          (click)="remove()"
+        >
+          <tui-icon icon="@tui.trash-2" aria-hidden="true" />
+          <span>Удалить из закладок</span>
+        </button>
+      }
+    </div>
+  </ng-template>
+
+  @if (error()) {
+    <small role="alert">{{ error() }}</small>
+  }
+</div>

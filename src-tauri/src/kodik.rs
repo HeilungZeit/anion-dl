@@ -17,6 +17,7 @@
 //! загрузка станет медленной, а не сорвётся.
 
 use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 
 use base64::Engine;
@@ -40,32 +41,69 @@ const KNOWN_ENDPOINT: &str = "/ftor";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Один клиент на всё приложение: так TLS-сессии и пул соединений переживают
+/// смену серии. Новый Client на каждый клик терял этот выигрыш целиком.
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// Kodik иногда меняет `/ftor`. Найденный путь действителен для следующих
+/// серий, поэтому повторно скачивать 150 КБ player_single.js незачем.
+static ENDPOINT_CACHE: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+
+pub(crate) fn http_client() -> Result<&'static reqwest::Client, String> {
+    if let Some(client) = HTTP_CLIENT.get() {
+        return Ok(client);
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .user_agent(BROWSER_UA)
+        .build()
+        .map_err(|error| format!("Не удалось создать HTTP-клиент: {error}"))?;
+    let _ = HTTP_CLIENT.set(client);
+
+    HTTP_CLIENT
+        .get()
+        .ok_or_else(|| "Не удалось сохранить HTTP-клиент".to_string())
+}
+
+fn cached_endpoint() -> Option<String> {
+    ENDPOINT_CACHE
+        .get_or_init(|| RwLock::new(None))
+        .read()
+        .ok()
+        .and_then(|value| value.clone())
+}
+
+fn cache_endpoint(endpoint: String) {
+    if let Ok(mut value) = ENDPOINT_CACHE.get_or_init(|| RwLock::new(None)).write() {
+        *value = Some(endpoint);
+    }
+}
+
 /// Сдвиг, которым Kodik шифрует `src`. Остальные перебираются следом — цена
 /// перебора нулевая, а смена сдвига перестаёт быть отказом.
 const DEFAULT_SHIFT: u8 = 18;
 
 /// Достаёт URL манифеста нужного качества по URL плеера.
 pub async fn resolve(iframe_url: &str, preferred: u32) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(REQUEST_TIMEOUT)
-        .user_agent(BROWSER_UA)
-        .build()
-        .map_err(|error| format!("Не удалось создать HTTP-клиент: {error}"))?;
+    let client = http_client()?;
 
     let origin = origin_of(iframe_url)?;
-    let page = fetch_page(&client, iframe_url).await?;
+    let page = fetch_page(client, iframe_url).await?;
     let params = PlayerParams::parse(&page)?;
 
-    let endpoint = format!("{origin}{KNOWN_ENDPOINT}");
-    let payload = match request_links(&client, &endpoint, &origin, iframe_url, &params).await {
+    let endpoint = cached_endpoint().unwrap_or_else(|| format!("{origin}{KNOWN_ENDPOINT}"));
+    let payload = match request_links(client, &endpoint, &origin, iframe_url, &params).await {
         Ok(payload) => payload,
         Err(first) => {
-            let discovered = discover_endpoint(&client, &page, &origin)
+            let discovered = discover_endpoint(client, &page, &origin)
                 .await
                 .filter(|found| *found != endpoint)
                 .ok_or_else(|| format!("{first}. Другого эндпойнта в скрипте плеера нет"))?;
 
-            request_links(&client, &discovered, &origin, iframe_url, &params).await?
+            request_links(client, &discovered, &origin, iframe_url, &params)
+                .await
+                .inspect(|_| cache_endpoint(discovered.clone()))?
         }
     };
 
@@ -125,7 +163,9 @@ impl PlayerParams {
             referer: js_string(page, "var ref").ok_or_else(|| missing("ref"))?,
             referer_sign: js_string(page, "var ref_sign").ok_or_else(|| missing("ref_sign"))?,
             kind: field("type").ok_or_else(|| missing("type"))?,
-            id: field("id").or_else(|| field("videoId")).ok_or_else(|| missing("id"))?,
+            id: field("id")
+                .or_else(|| field("videoId"))
+                .ok_or_else(|| missing("id"))?,
             hash: field("hash").ok_or_else(|| missing("hash"))?,
         })
     }
@@ -204,11 +244,7 @@ async fn request_links(
 /// Kodik держит его в `atob("…")`, и меняет время от времени (`/ftor` → `/kor`
 /// → …). Скрипт весит полтораста килобайт, поэтому качается только когда
 /// известный адрес уже отказал.
-async fn discover_endpoint(
-    client: &reqwest::Client,
-    page: &str,
-    origin: &str,
-) -> Option<String> {
+async fn discover_endpoint(client: &reqwest::Client, page: &str, origin: &str) -> Option<String> {
     let script = find_script(page, "app.player_single")?;
     let url = format!("{origin}{script}");
 
@@ -324,7 +360,11 @@ fn js_string(page: &str, binding: &str) -> Option<String> {
         };
         let rest = rest.trim_start();
 
-        let Some(quote) = rest.chars().next().filter(|char| *char == '"' || *char == '\'') else {
+        let Some(quote) = rest
+            .chars()
+            .next()
+            .filter(|char| *char == '"' || *char == '\'')
+        else {
             continue;
         };
 
@@ -409,7 +449,10 @@ mod tests {
 
         let best = best_link(&payload).expect("ссылка есть");
 
-        assert!(best.ends_with("/480.mp4:hls:manifest.m3u8"), "выбрано: {best}");
+        assert!(
+            best.ends_with("/480.mp4:hls:manifest.m3u8"),
+            "выбрано: {best}"
+        );
     }
 
     /// Обратная сборка `src` из готового URL — нужна только тесту, чтобы не
@@ -417,8 +460,8 @@ mod tests {
     fn encode_quality(src: &str, quality: u32) -> String {
         let url = decode_src(src).expect("образец расшифровывается");
         let (prefix, suffix) = crate::resolver::split_quality(&url).expect("образец разрезается");
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode(format!("{prefix}{quality}{suffix}"));
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(format!("{prefix}{quality}{suffix}"));
 
         encoded
             .chars()

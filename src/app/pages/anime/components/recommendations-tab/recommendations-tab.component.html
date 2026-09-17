@@ -1,0 +1,28 @@
+@if (similar.isLoading()) {
+  <tui-loader size="l" />
+} @else if (similar.error()) {
+  <p class="state state--error">
+    Не удалось загрузить похожие: {{ similar.error()?.message }}
+  </p>
+} @else if (similar.value(); as list) {
+  @if (list.length === 0) {
+    <p class="state">Похожих тайтлов не нашлось.</p>
+  } @else {
+    <div class="grid">
+      @for (anime of list; track anime.animeId) {
+        <app-anime-card
+          [animeId]="anime.animeId"
+          [title]="anime.title"
+          [poster]="anime.poster"
+          [year]="anime.year"
+          [type]="anime.type.shortname || anime.type.name"
+          [statusTitle]="anime.animeStatus.title"
+          [statusAlias]="anime.animeStatus.alias"
+          [rating]="anime.rating.average"
+          [episodesAired]="anime.episodes?.aired"
+          [episodesCount]="anime.episodes?.count"
+        />
+      }
+    </div>
+  }
+}

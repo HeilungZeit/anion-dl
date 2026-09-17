@@ -1,0 +1,25 @@
+:host { display: block; }
+.page { max-inline-size: var(--anion-container-max); margin-inline: auto; }
+.hero { margin-block-end: var(--anion-space-24); padding-block-end: var(--anion-space-20); border-block-end: 1px solid var(--anion-border); }
+.hero > span { color: var(--anion-accent-text); font-size: var(--anion-font-size-12); text-transform: uppercase; }
+.hero h1 { margin: var(--anion-space-6) 0; }
+.hero p { margin: 0; color: var(--anion-text-secondary); }
+.calendar { display: flex; flex-direction: column; gap: var(--anion-space-24); }
+.day { padding: var(--anion-space-20); border: 1px solid var(--anion-border); border-radius: var(--anion-radius-xl); background: var(--anion-bg-elevated); }
+.day--today { border-color: var(--anion-accent-a45); }
+.day > header { display: flex; align-items: center; justify-content: space-between; margin-block-end: var(--anion-space-16); }
+.day h2 { margin: 0; text-transform: capitalize; }
+.day > header span { display: grid; inline-size: 28px; block-size: 28px; place-items: center; border-radius: 50%; background: var(--anion-surface-3); }
+.day__entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: var(--anion-space-12); }
+.entry { display: flex; align-items: center; gap: var(--anion-space-12); overflow: hidden; border: 1px solid var(--anion-border); border-radius: var(--anion-radius-lg); background: var(--anion-surface-2); color: inherit; text-decoration: none; }
+.entry:hover { border-color: var(--anion-accent-a45); }
+.entry img { inline-size: 72px; block-size: 100px; object-fit: cover; }
+.entry__body { display: flex; min-inline-size: 0; flex: 1; flex-direction: column; gap: var(--anion-space-6); }
+.entry__body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry__body span { color: var(--anion-text-secondary); font-size: var(--anion-font-size-13); }
+.entry time { color: var(--anion-accent-text); font-size: var(--anion-font-size-13); }
+.entry > span:last-child { padding-inline-end: var(--anion-space-12); color: var(--anion-text-secondary); }
+.state { display: grid; min-block-size: 220px; place-items: center; color: var(--anion-text-secondary); }
+.state--error { color: var(--anion-negative-text); }
+.state--empty { gap: var(--anion-space-10); align-content: center; text-align: center; }
+.state--empty a { color: var(--anion-accent-text); }

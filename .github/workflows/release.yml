@@ -137,7 +137,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'anion-dl ${{ needs.verify-version.outputs.version }}'
+          releaseName: 'Anion Flow ${{ needs.verify-version.outputs.version }}'
           releaseBody: 'Выберите установщик для своей операционной системы в разделе Assets.'
           releaseDraft: false
           prerelease: false

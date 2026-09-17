@@ -1,84 +1,87 @@
 import { inject, Injectable } from '@angular/core';
-import { fetch } from '@tauri-apps/plugin-http';
 
-import {
-  API_BASE_URL,
-  CLIENT_HEADER,
-  CLIENT_HEADER_VALUE,
-} from './api.config';
+import { ApiClient } from './http';
 import type {
   Anime,
   AnimeFeed,
   AnimeQuery,
+  Comment,
   GenresResponse,
 } from './anime.types';
 
 /**
- * Единственная точка входа в API. Компоненты не ходят в сеть сами.
+ * Каталожная часть API. Компоненты не ходят в сеть сами.
  *
- * Используется fetch из tauri-plugin-http, а не браузерный: запрос уходит через
- * Rust и потому не подчиняется браузерной CORS-политике. Доступный origin всё
- * равно должен быть явно разрешён в Tauri capabilities.
+ * Транспорт, заголовки и разбор ошибок живут в ApiClient — здесь остаётся
+ * только то, что специфично для каталога: адреса, сборка query и кэш.
  *
- * Кэш здесь обязателен, а не «на будущее»: на /api бэка висит RateLimiterMiddleware,
+ * Кэш обязателен, а не «на будущее»: на /api бэка висит RateLimiterMiddleware,
  * и без кэша навигация туда-сюда быстро упирается в 429.
  */
 @Injectable({ providedIn: 'root' })
 export class AnimeService {
-  private readonly baseUrl = inject(API_BASE_URL);
+  private readonly api = inject(ApiClient);
   private readonly cache = new Map<string, Promise<unknown>>();
 
   getFeed(): Promise<AnimeFeed> {
-    return this.cached('feed', () => this.get<AnimeFeed>('/anime/feed'));
+    return this.cached('feed', () => this.api.get<AnimeFeed>('/anime/feed'));
   }
 
   getById(id: string | number): Promise<Anime> {
-    return this.cached(`anime:${id}`, () => this.get<Anime>(`/anime/${id}`));
+    return this.cached(`anime:${id}`, () =>
+      this.api.get<Anime>(`/anime/${id}`)
+    );
   }
 
   getGenres(): Promise<GenresResponse> {
     return this.cached('genres', () =>
-      this.get<GenresResponse>('/anime/genres')
+      this.api.get<GenresResponse>('/anime/genres')
     );
   }
 
   /** Каталог с фильтрами. Пустой запрос — просто список по сортировке. */
   getByQuery(query: AnimeQuery): Promise<Anime[]> {
     const qs = this.toQueryString(query);
-    return this.cached(`catalog:${qs}`, () => this.get<Anime[]>(`/anime?${qs}`));
+    return this.cached(`catalog:${qs}`, () =>
+      this.api.get<Anime[]>(`/anime?${qs}`)
+    );
+  }
+
+  getRecommendations(id: string | number): Promise<Anime[]> {
+    return this.cached(`recommendations:${id}`, () =>
+      this.api.get<Anime[]>(`/anime/${id}/recommendations`)
+    );
+  }
+
+  /**
+   * Комментарии к тайтлу. Не кэшируются: страница листается по offset, и
+   * каждый её кусок пришлось бы держать отдельным ключом ради одного прохода.
+   */
+  getComments(
+    id: string | number,
+    query: CommentsQuery
+  ): Promise<Comment[]> {
+    const qs = new URLSearchParams({
+      limit: String(query.limit),
+      offset: String(query.offset),
+      sort: query.sort,
+    });
+
+    return this.api.get<Comment[]>(`/anime/${id}/comments?${qs.toString()}`);
+  }
+
+  getCommentReplies(parentId: number, skip = 0): Promise<Comment[]> {
+    return this.api.get<Comment[]>(
+      `/anime/comments/replies/${parentId}?skip=${skip}`
+    );
   }
 
   /**
    * Поиск. Отдельный метод, потому что на бэке это POST с телом, а не query.
    * Не кэшируем — строка меняется на каждое нажатие.
    */
-  async search(query: AnimeQuery): Promise<Anime[]> {
-    const response = await fetch(`${this.baseUrl}/anime/search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        [CLIENT_HEADER]: CLIENT_HEADER_VALUE,
-      },
-      body: JSON.stringify(query),
-    });
-
-    if (!response.ok) {
-      throw new Error(this.describeFailure(response, '/anime/search'));
-    }
-
-    return response.json() as Promise<Anime[]>;
-  }
-
-  private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      headers: { [CLIENT_HEADER]: CLIENT_HEADER_VALUE },
-    });
-
-    if (!response.ok) {
-      throw new Error(this.describeFailure(response, path));
-    }
-
-    return response.json() as Promise<T>;
+  search(query: AnimeQuery): Promise<Anime[]> {
+    return this.api.post<Anime[]>('/anime/search', query);
   }
 
   private cached<T>(key: string, load: () => Promise<T>): Promise<T> {
@@ -97,25 +100,6 @@ export class AnimeService {
 
     this.cache.set(key, pending);
     return pending;
-  }
-
-  private describeFailure(response: Response, path: string): string {
-    // Vercel отдаёт свой JS-челлендж тоже под кодом 429, и раньше это
-    // выглядело как рейт-лимит бэка — на самом деле запрос до бэка не доходит
-    // вовсе. Отличаем по заголовку, который ставит edge.
-    if (response.headers.get('x-vercel-mitigated')) {
-      return (
-        'Запрос заблокирован защитой Vercel (Attack Challenge Mode): она требует ' +
-        'выполнить JS-проверку, чего приложение сделать не может. Отключите ' +
-        'челлендж или добавьте правило обхода для API.'
-      );
-    }
-
-    if (response.status === 429) {
-      return 'Бэк ограничил частоту запросов (429). Подождите немного.';
-    }
-
-    return `Запрос ${path} завершился со статусом ${response.status}`;
   }
 
   private toQueryString(query: AnimeQuery): string {
@@ -141,4 +125,10 @@ export class AnimeService {
 
     return params.toString();
   }
+}
+
+export interface CommentsQuery {
+  limit: number;
+  offset: number;
+  sort: 'new' | 'old' | 'nice';
 }

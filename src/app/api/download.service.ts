@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { LazyStore } from '@tauri-apps/plugin-store';
 
+import { DEFAULT_QUALITY } from '../player/manifest-quality';
 import { ResolverService } from './resolver.service';
 import type { Video } from './anime.types';
 
@@ -27,10 +28,10 @@ const DEFAULT_FOLDER_PER_ANIME = true;
  */
 const CDN_REFERER = 'https://kodikplayer.com/';
 
-/** Что реально встречается у Kodik. 1080p наблюдалось как 404. */
-export const QUALITIES = [720, 480, 360] as const;
-
-export const DEFAULT_QUALITY = 720;
+// Лестница качеств переехала в player/manifest-quality.ts: её одинаково нужно
+// знать и загрузчику, и плееру. Реэкспорт оставлен, чтобы потребители
+// загрузчика не лезли за константой в чужой модуль.
+export { DEFAULT_QUALITY, QUALITIES } from '../player/manifest-quality';
 
 /** Текст, которым Rust помечает убитый по отмене процесс. */
 const CANCELLED = 'Отменено';

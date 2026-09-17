@@ -1,0 +1,20 @@
+<div class="page">
+  <header><span>Архив сезонов</span><h1>{{ title() }}</h1></header>
+  <div class="controls">
+    <select [value]="selectedYear()" (change)="onYear($event)">
+      @for (item of years; track item) { <option [value]="item">{{ item }}</option> }
+    </select>
+    <nav>
+      @for (item of seasons; track item.value) {
+        <button type="button" [class.active]="selectedSeason() === item.value" (click)="select(selectedYear(), item.value)">{{ item.label }}</button>
+      }
+    </nav>
+  </div>
+  @if (anime.isLoading()) { <div class="state"><tui-loader size="l" /></div> }
+  @else if (anime.error()) { <p class="state state--error">Не удалось загрузить сезон: {{ anime.error()?.message }}</p> }
+  @else { <div class="grid">
+    @for (item of anime.value() ?? []; track item.animeId) {
+      <app-anime-card [animeId]="item.animeId" [title]="item.title" [poster]="item.poster" [year]="item.year" [type]="item.type.name" [statusTitle]="item.animeStatus.title" [statusAlias]="item.animeStatus.alias" [rating]="item.rating.average" [episodesAired]="item.episodes?.aired" [episodesCount]="item.episodes?.count" />
+    } @empty { <p class="state">В этом сезоне ничего не найдено</p> }
+  </div> }
+</div>

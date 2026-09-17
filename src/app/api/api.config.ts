@@ -27,3 +27,13 @@ export const API_BASE_URL = new InjectionToken<string>('API_BASE_URL', {
 export const CLIENT_HEADER = 'X-Anion-Client';
 
 export const CLIENT_HEADER_VALUE = 'anion-dl';
+
+/**
+ * Сайт, а не API. Нужен для того, что в десктопе делать незачем: регистрации,
+ * восстановления пароля и правки профиля — эти экраны открываются в системном
+ * браузере, а не переписываются здесь.
+ *
+ * Разрешения хватает штатного `opener:default`: в него уже входят
+ * `allow-open-url` и `allow-default-urls`, покрывающие http(s).
+ */
+export const SITE_BASE_URL = 'https://anion.online';

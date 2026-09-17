@@ -1,0 +1,74 @@
+<div class="page">
+  <header class="hero">
+    <div>
+      <span>Личная библиотека</span>
+      <h1>Мои закладки</h1>
+      <p>Тайтлы, которые вы смотрите или оставили на потом</p>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Категории закладок">
+    @for (tab of tabs; track tab.status) {
+      <a
+        [class.tabs__active]="activeStatus() === tab.status"
+        [routerLink]="['/bookmarks', tab.status]"
+        [queryParams]="{ sort: activeSort() === 'created_desc' ? null : activeSort() }"
+      >
+        {{ tab.label }} <strong>{{ tabCount(tab.status) }}</strong>
+      </a>
+    }
+  </nav>
+
+  <div class="toolbar">
+    <h2>{{ activeLabel() }}</h2>
+    <label>
+      <span>Сортировка</span>
+      <select [value]="activeSort()" (change)="changeSort($event)">
+        <option value="created_desc">Сначала новые</option>
+        <option value="created_asc">Сначала старые</option>
+        <option value="title_asc">По названию А–Я</option>
+        <option value="title_desc">По названию Я–А</option>
+      </select>
+    </label>
+  </div>
+
+  @if (bookmarks.isLoading()) {
+    <div class="state"><tui-loader size="l" /></div>
+  } @else if (bookmarks.error()) {
+    <p class="state state--error">Не удалось загрузить закладки: {{ bookmarks.error()?.message }}</p>
+  } @else if (bookmarks.value(); as response) {
+    <div class="grid">
+      @for (bookmark of response.items; track bookmark.id) {
+        <article class="card">
+          <a [routerLink]="['/anime', bookmark.yumiId]">
+            <img [src]="bookmark.poster.medium || bookmark.poster.big" [alt]="bookmark.title" />
+            <span class="card__body">
+              <strong>{{ bookmark.title }}</strong>
+              <span>Просмотрено {{ bookmark.watchedEpisodes }} из {{ bookmark.totalEpisodes || '—' }}</span>
+              <span class="progress"><i [style.width.%]="bookmark.totalEpisodes ? bookmark.watchedEpisodes / bookmark.totalEpisodes * 100 : 0"></i></span>
+            </span>
+          </a>
+          <button type="button" (click)="remove(bookmark.id, bookmark.yumiId)">Удалить</button>
+        </article>
+      } @empty {
+        <div class="state state--empty">В этой категории пока ничего нет</div>
+      }
+    </div>
+
+    @if (response.pagination.totalPages > 1) {
+      <nav class="pagination" aria-label="Страницы закладок">
+        <a
+          [class.pagination__disabled]="pageNumber() <= 1"
+          [routerLink]="[]"
+          [queryParams]="{ page: pageNumber() > 2 ? pageNumber() - 1 : null, sort: activeSort() === 'created_desc' ? null : activeSort() }"
+        >←</a>
+        <span>{{ pageNumber() }} / {{ response.pagination.totalPages }}</span>
+        <a
+          [class.pagination__disabled]="pageNumber() >= response.pagination.totalPages"
+          [routerLink]="[]"
+          [queryParams]="{ page: pageNumber() + 1, sort: activeSort() === 'created_desc' ? null : activeSort() }"
+        >→</a>
+      </nav>
+    }
+  }
+</div>

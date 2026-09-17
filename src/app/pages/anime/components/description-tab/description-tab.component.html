@@ -1,0 +1,107 @@
+<div class="tab">
+  @if (dubbings().length === 0) {
+    <div class="empty">
+      <strong>Смотреть нечем</strong>
+      <span>Для этого аниме нет источника Kodik.</span>
+    </div>
+  } @else {
+    <div class="player-container">
+      <div class="player-panel">
+        <div class="panel-head">
+          <div class="episodes-info">
+            <span class="episodes-title">Эпизоды</span>
+            <span class="episodes-count">{{ episodes().length }} эп.</span>
+          </div>
+
+          @if (episodes().length > 0) {
+            <div class="watch-progress">
+              <span class="watch-progress-label">
+                Просмотрено {{ watchedCount() }} из {{ episodes().length }}
+              </span>
+              <span class="watch-progress-track">
+                <span
+                  class="watch-progress-bar"
+                  [style.width.%]="watchedPercent()"
+                ></span>
+              </span>
+            </div>
+          }
+        </div>
+
+        <div class="select-wrapper">
+          <tui-textfield class="select" tuiChevron tuiTextfieldSize="m">
+            <label tuiLabel>Выберите озвучку</label>
+            <input
+              tuiSelect
+              [ngModel]="dubbing()"
+              (ngModelChange)="dubbingChange.emit($event)"
+            />
+            <tui-data-list *tuiDropdown>
+              @if (dubbersData().dubbers.length > 0) {
+                <tui-opt-group label="Озвучки">
+                  @for (name of dubbersData().dubbers; track name) {
+                    <button tuiOption type="button" [value]="name">
+                      {{ dubbingLabel(name) }}
+                    </button>
+                  }
+                </tui-opt-group>
+              }
+              @if (dubbersData().subtitles.length > 0) {
+                <tui-opt-group label="Субтитры">
+                  @for (name of dubbersData().subtitles; track name) {
+                    <button tuiOption type="button" [value]="name">
+                      {{ dubbingLabel(name) }}
+                    </button>
+                  }
+                </tui-opt-group>
+              }
+            </tui-data-list>
+          </tui-textfield>
+        </div>
+
+        <div class="episodes-wrapper" #strip (wheel)="onStripWheel($event)">
+          <div class="episodes-scroll-container">
+            @for (episode of episodes(); track episode.videoId) {
+              <button
+                class="episode-item"
+                type="button"
+                [attr.aria-current]="isSelected(episode) ? 'true' : null"
+                [attr.aria-label]="
+                  'Эпизод ' +
+                  episode.number +
+                  (isWatched(episode) ? ', просмотрен' : '')
+                "
+                [attr.data-episode]="episode.number"
+                [class.episode-item--selected]="isSelected(episode)"
+                [class.episode-item--watched]="isWatched(episode)"
+                (click)="select(episode)"
+              >
+                <span class="episode-label">Эп.</span>
+                <span class="episode-number">{{ episode.number }}</span>
+                @if (isWatched(episode)) {
+                  <span class="episode-status" aria-hidden="true">✓</span>
+                }
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+
+      @if (progressInitialized() && selectedEpisode(); as episode) {
+        <app-video-player
+          [iframeUrl]="episode.iframeUrl"
+          [isLastEpisode]="isLastEpisode()"
+          [poster]="preview()"
+          [skips]="episode.skips"
+          [startPositionSecs]="startPositionSecs()"
+          (ended)="markEnded($event)"
+          (nextEpisode)="goToNextEpisode()"
+          (playbackPaused)="saveAndFlush($event)"
+          (progress)="saveProgress($event)"
+        />
+      }
+    </div>
+  }
+
+  <app-comments [animeId]="anime().animeId" />
+</div>
