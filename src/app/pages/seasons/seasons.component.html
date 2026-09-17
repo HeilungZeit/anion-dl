@@ -1,20 +1,137 @@
-<div class="page">
-  <header><span>Архив сезонов</span><h1>{{ title() }}</h1></header>
-  <div class="controls">
-    <select [value]="selectedYear()" (change)="onYear($event)">
-      @for (item of years; track item) { <option [value]="item">{{ item }}</option> }
-    </select>
-    <nav>
-      @for (item of seasons; track item.value) {
-        <button type="button" [class.active]="selectedSeason() === item.value" (click)="select(selectedYear(), item.value)">{{ item.label }}</button>
+<div class="seasons-page" [attr.data-season]="seasons[seasonIndex()].value">
+    <header class="page-heading">
+      <span class="heading-accent" aria-hidden="true"></span>
+      <div>
+        <h1>Аниме по сезонам</h1>
+        <p>Выберите год и сезон, чтобы найти, что посмотреть.</p>
+      </div>
+    </header>
+
+    <section class="season-picker" aria-label="Выбор сезона">
+      <div class="picker-main">
+        <div class="year-controls">
+        <tui-textfield tuiChevron tuiTextfieldSize="m" [tuiTextfieldCleaner]="false" class="year-picker">
+          <input tuiSelect aria-label="Год" [ngModel]="year()" (ngModelChange)="select($event, seasonIndex())" />
+          <tui-data-list *tuiDropdown>
+            @for (option of years; track option) {
+              <button tuiOption type="button" [value]="option">{{ option }}</button>
+            }
+          </tui-data-list>
+        </tui-textfield>
+          @if (!isCurrent()) {
+            <button class="current-season" tuiButton appearance="flat" size="s" type="button" iconStart="@tui.rotate-ccw" (click)="goToCurrent()">Текущий сезон</button>
+          }
+        </div>
+        <tui-tabs class="season-tabs" size="m" [underline]="false" [activeItemIndex]="seasonIndex()" (activeItemIndexChange)="select(year(), $event)" aria-label="Сезон">
+          @for (season of seasons; track season.value; let index = $index) {
+            <button tuiTab type="button" [class.selected-season]="season.value === seasons[seasonIndex()].value"><tui-icon class="tab-icon" [icon]="seasonIcons[index]" aria-hidden="true" />{{ season.title }}</button>
+          }
+        </tui-tabs>
+      </div>
+
+    </section>
+
+    <div class="results-heading">
+      <div class="season-navigation">
+        <button tuiButton appearance="secondary" size="s" type="button" iconStart="@tui.chevron-left" aria-label="Предыдущий сезон" title="Предыдущий сезон" [disabled]="year() === 1965 && seasonIndex() === 0" (click)="adjacent(-1)"></button>
+      <h2><span class="season-symbol" aria-hidden="true"><tui-icon [icon]="seasonIcons[seasonIndex()]" /></span>{{ label() }}</h2>
+        <button class="next" tuiButton appearance="secondary" size="s" type="button" iconEnd="@tui.chevron-right" aria-label="Следующий сезон" title="Следующий сезон" [disabled]="year() === years[0] && seasonIndex() === 3" (click)="adjacent(1)"></button>
+      </div>
+      <p>По популярности</p>
+    </div>
+    @if (bookmarkError()) { <p role="alert" class="error">{{ bookmarkError() }}</p> }
+    <section class="season-grid" [attr.aria-busy]="loading()" aria-label="Аниме выбранного сезона">
+      @for (anime of items(); track anime.animeId; let index = $index) {
+        <article class="season-card" [style.--entry-order]="index % 6">
+          <div class="poster-wrap">
+            <a class="poster" [routerLink]="path(anime.animeId, anime.animeUrl)" tabindex="-1" aria-hidden="true">
+              <img [src]="anime.poster.big || anime.poster.medium" alt="" loading="lazy" width="160" height="240" />
+            </a>
+            <div class="poster-rating" [class.poster-rating--unrated]="!anime.rating.average">
+              <span class="rating"><tui-icon icon="@tui.star" />{{ anime.rating && anime.rating.average > 0 ? anime.rating.average.toFixed(1) : 'Нет оценки' }}</span>
+              @if (anime.rating.counters; as votes) {
+                <span class="rating-votes" [title]="'Оценок: ' + fullNumber.format(votes)">Оценок: {{ compactNumber.format(votes) }}</span>
+              }
+            </div>
+          </div>
+          <div class="card-content">
+            <div class="card-meta">
+              <span class="format">{{ anime.type.name || anime.type.shortname }}</span>
+              @if (anime.animeStatus) {
+                <span
+                  class="anime-status"
+                  [class.anime-status--announce]="['announce', 'announcement', 'anons'].includes(anime.animeStatus.alias)"
+                  [class.anime-status--ongoing]="anime.animeStatus.alias === 'ongoing'"
+                  [class.anime-status--released]="anime.animeStatus.alias === 'released'"
+                  tuiBadge
+                  appearance="neutral"
+                  size="s"
+                >{{ anime.animeStatus.title }}</span>
+              }
+              @if (shortAge(anime.minAge.titleLong); as age) {
+                <span class="age-label" [title]="anime.minAge.titleLong">{{ age }}</span>
+              }
+            </div>
+            <h3><a [title]="anime.title" [routerLink]="path(anime.animeId, anime.animeUrl)">{{ anime.title }}</a></h3>
+            @if (anime.genres.length) {
+              <div class="genres">
+                @for (genre of anime.genres.slice(0, 3); track genre.id) {
+                  <span class="genre-tag" tuiBadge appearance="neutral" size="s">{{ genre.title }}</span>
+                }
+              </div>
+            }
+            @if (anime.description) {
+              <p class="description">{{ anime.description | removeChars }}</p>
+            }
+            @if (anime.episodes?.nextDate; as nextDate) {
+              @if (nextDate * 1000 > now) {
+                <p class="next-episode"><tui-icon icon="@tui.calendar-clock" />Следующая серия · {{ nextDate * 1000 | date:'dd.MM' }}</p>
+              }
+            }
+            <footer class="card-footer">
+              <div class="card-stats">
+                @if (anime.views; as views) {
+                  <span [title]="'Просмотров: ' + fullNumber.format(views)" [attr.aria-label]="'Просмотров: ' + fullNumber.format(views)"><tui-icon icon="@tui.eye" />{{ compactNumber.format(views) }}</span>
+                }
+                @if (anime.episodes; as episodes) {
+                  @if (episodes.aired || episodes.count) {
+                    <span><tui-icon icon="@tui.layers" />
+                      @if (anime.animeStatus.alias === 'ongoing' && episodes.aired > 0) {
+                        Вышло {{ episodes.aired }}@if (episodes.count) { из {{ episodes.count }} } сер.
+                      } @else if (episodes.count) {
+                        {{ episodes.count }} сер.
+                      } @else {
+                        Вышло {{ episodes.aired }} сер.
+                      }
+                    </span>
+                  }
+                }
+              </div>
+              <div class="bookmark-action">
+                @if (user.isInitialized() && (!user.isAuthenticated() || bookmarks.isLoaded())) {
+                  @if (isBookmarked(anime)) {
+                    <span class="bookmark-saved"><tui-icon icon="@tui.bookmark-check" />В закладках</span>
+                  } @else {
+                    <button class="bookmark" tuiButton appearance="secondary" size="s" type="button" iconStart="@tui.bookmark-plus" [disabled]="saving().has(anime.animeId)" [attr.aria-label]="'Буду смотреть: ' + anime.title" (click)="bookmark(anime)">{{ saving().has(anime.animeId) ? 'Добавляем…' : 'Буду смотреть' }}</button>
+                  }
+                }
+              </div>
+            </footer>
+          </div>
+        </article>
       }
-    </nav>
+    </section>
+    <div class="list-footer" aria-live="polite">
+      @if (error()) {
+        <p role="alert" class="error">{{ error() }}</p>
+        <button tuiButton appearance="secondary" type="button" (click)="loadMore()">Повторить</button>
+      } @else if (loading()) {
+        <tui-loader size="m" [loading]="true" /><p>Загружаем аниме…</p>
+      } @else if (!items().length) {
+        <tui-icon icon="@tui.calendar-search" /><h3>Пока ничего нет</h3>
+        <p>Для этого сезона нет аниме с оценкой выше 5 или без оценки. Выберите соседний сезон.</p>
+      } @else if (hasMore()) {
+        <button tuiButton appearance="secondary" type="button" (click)="loadMore()">Показать ещё</button>
+      } @else { <p>Это все аниме сезона · {{ items().length }}</p> }
+    </div>
   </div>
-  @if (anime.isLoading()) { <div class="state"><tui-loader size="l" /></div> }
-  @else if (anime.error()) { <p class="state state--error">Не удалось загрузить сезон: {{ anime.error()?.message }}</p> }
-  @else { <div class="grid">
-    @for (item of anime.value() ?? []; track item.animeId) {
-      <app-anime-card [animeId]="item.animeId" [title]="item.title" [poster]="item.poster" [year]="item.year" [type]="item.type.name" [statusTitle]="item.animeStatus.title" [statusAlias]="item.animeStatus.alias" [rating]="item.rating.average" [episodesAired]="item.episodes?.aired" [episodesCount]="item.episodes?.count" />
-    } @empty { <p class="state">В этом сезоне ничего не найдено</p> }
-  </div> }
-</div>

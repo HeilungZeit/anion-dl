@@ -1,74 +1,149 @@
-<div class="page">
-  <header class="hero">
-    <div>
-      <span>Личная библиотека</span>
-      <h1>Мои закладки</h1>
-      <p>Тайтлы, которые вы смотрите или оставили на потом</p>
+<div class="bookmarks-page">
+    <header class="library-hero">
+      <div class="library-hero__icon" aria-hidden="true">
+        <tui-icon icon="@tui.bookmark" />
+      </div>
+      <div class="library-hero__copy">
+        <span class="library-hero__eyebrow">Личная библиотека</span>
+        <h1>Мои закладки</h1>
+        <p>Храните любимые тайтлы и отмечайте прогресс просмотра</p>
+      </div>
+      @if (totalCount() > 0) {
+      <div class="library-hero__count">
+        <strong>{{ totalCount() }}</strong>
+        <span>в библиотеке</span>
+      </div>
+      }
+    </header>
+
+    @if (errorMessage()) {
+    <div class="error-banner" role="alert">
+      <tui-icon icon="@tui.circle-alert" />
+      <span>{{ errorMessage() }}</span>
+      <button tuiButton appearance="secondary" size="s" type="button" (click)="bookmarks.reload()">
+        Повторить
+      </button>
     </div>
-  </header>
-
-  <nav class="tabs" aria-label="Категории закладок">
-    @for (tab of tabs; track tab.status) {
-      <a
-        [class.tabs__active]="activeStatus() === tab.status"
-        [routerLink]="['/bookmarks', tab.status]"
-        [queryParams]="{ sort: activeSort() === 'created_desc' ? null : activeSort() }"
-      >
-        {{ tab.label }} <strong>{{ tabCount(tab.status) }}</strong>
-      </a>
     }
-  </nav>
 
-  <div class="toolbar">
-    <h2>{{ activeLabel() }}</h2>
-    <label>
-      <span>Сортировка</span>
-      <select [value]="activeSort()" (change)="changeSort($event)">
-        <option value="created_desc">Сначала новые</option>
-        <option value="created_asc">Сначала старые</option>
-        <option value="title_asc">По названию А–Я</option>
-        <option value="title_desc">По названию Я–А</option>
-      </select>
-    </label>
-  </div>
-
-  @if (bookmarks.isLoading()) {
-    <div class="state"><tui-loader size="l" /></div>
-  } @else if (bookmarks.error()) {
-    <p class="state state--error">Не удалось загрузить закладки: {{ bookmarks.error()?.message }}</p>
-  } @else if (bookmarks.value(); as response) {
-    <div class="grid">
-      @for (bookmark of response.items; track bookmark.id) {
-        <article class="card">
-          <a [routerLink]="['/anime', bookmark.yumiId]">
-            <img [src]="bookmark.poster.medium || bookmark.poster.big" [alt]="bookmark.title" />
-            <span class="card__body">
-              <strong>{{ bookmark.title }}</strong>
-              <span>Просмотрено {{ bookmark.watchedEpisodes }} из {{ bookmark.totalEpisodes || '—' }}</span>
-              <span class="progress"><i [style.width.%]="bookmark.totalEpisodes ? bookmark.watchedEpisodes / bookmark.totalEpisodes * 100 : 0"></i></span>
-            </span>
-          </a>
-          <button type="button" (click)="remove(bookmark.id, bookmark.yumiId)">Удалить</button>
-        </article>
-      } @empty {
-        <div class="state state--empty">В этой категории пока ничего нет</div>
+    @if (bookmarks.isLoading() && !counts()) {
+    <div class="tabs-skeleton" aria-label="Загрузка закладок">
+      @for (item of skeletonTabs; track item) {
+      <span></span>
       }
     </div>
-
-    @if (response.pagination.totalPages > 1) {
-      <nav class="pagination" aria-label="Страницы закладок">
-        <a
-          [class.pagination__disabled]="pageNumber() <= 1"
-          [routerLink]="[]"
-          [queryParams]="{ page: pageNumber() > 2 ? pageNumber() - 1 : null, sort: activeSort() === 'created_desc' ? null : activeSort() }"
-        >←</a>
-        <span>{{ pageNumber() }} / {{ response.pagination.totalPages }}</span>
-        <a
-          [class.pagination__disabled]="pageNumber() >= response.pagination.totalPages"
-          [routerLink]="[]"
-          [queryParams]="{ page: pageNumber() + 1, sort: activeSort() === 'created_desc' ? null : activeSort() }"
-        >→</a>
-      </nav>
+    } @else {
+    <nav
+      class="library-tabs"
+      aria-label="Категории закладок"
+      [attr.aria-busy]="bookmarks.isLoading()"
+    >
+      @for (tab of tabs; track tab.key) {
+      <a
+        class="library-tab"
+        [routerLink]="['/bookmarks', tab.status]"
+        [queryParams]="{ page: null }"
+        queryParamsHandling="merge"
+        [class.active]="activeStatus() === tab.status"
+        [attr.aria-current]="activeStatus() === tab.status ? 'page' : null"
+      >
+        <tui-icon [icon]="tab.icon" />
+        <span>{{ tab.label }}</span>
+        <strong>{{ tabCount(tab.status) }}</strong>
+      </a>
+      }
+    </nav>
     }
-  }
-</div>
+
+    @if (bookmarks.isLoading()) {
+    <section
+      class="bookmarks-content"
+      [attr.aria-label]="'Загрузка категории «' + activeLabel() + '»'"
+      aria-busy="true"
+    >
+      <div class="section-heading section-heading--loading" aria-hidden="true">
+        <div class="section-heading-skeleton__copy">
+          <span class="section-heading-skeleton__title"></span>
+          <span class="section-heading-skeleton__count"></span>
+        </div>
+        <div class="bookmark-sort bookmark-sort--loading">
+          <span class="bookmark-sort-skeleton__label"></span>
+          <span class="bookmark-sort-skeleton__control"></span>
+        </div>
+      </div>
+      <div class="bookmarks-grid bookmarks-grid--loading">
+        @for (item of skeletonCards; track item) {
+        <div class="bookmark-skeleton">
+          <span class="bookmark-skeleton__poster"></span>
+          <span class="bookmark-skeleton__line bookmark-skeleton__line--wide"></span>
+          <span class="bookmark-skeleton__line"></span>
+        </div>
+        }
+      </div>
+    </section>
+    } @else if (!bookmarks.error()) {
+    <section class="bookmarks-content" [attr.aria-label]="activeLabel()">
+      <div class="section-heading">
+        <div>
+          <h2>{{ activeLabel() }}</h2>
+          <p>{{ bookmarks.value()?.pagination?.totalItems ?? 0 }} {{ bookmarksCountLabel() }}</p>
+        </div>
+        <label class="bookmark-sort">
+          <span>Сортировка</span>
+          <tui-textfield
+            tuiChevron
+            tuiTextfieldSize="m"
+            [stringify]="stringifySort"
+            [tuiTextfieldCleaner]="false"
+          >
+            <input
+              tuiSelect
+              [ngModel]="activeSort()"
+              (ngModelChange)="onSortChange($event)"
+            />
+            <tui-data-list *tuiDropdown>
+              @for (option of sortOptions; track option.value) {
+              <button tuiOption type="button" [value]="option.value">
+                {{ option.label }}
+              </button>
+              }
+            </tui-data-list>
+          </tui-textfield>
+        </label>
+      </div>
+
+      @if ((bookmarks.value()?.items ?? []).length === 0) {
+      <div class="empty-state">
+        <div class="empty-state__icon">
+          <tui-icon icon="@tui.inbox" />
+        </div>
+        <h3>Здесь пока пусто</h3>
+        <p>Добавляйте аниме из каталога — они появятся в выбранной категории.</p>
+        <a tuiButton appearance="primary" routerLink="/catalog">
+          <tui-icon icon="@tui.layout-grid" />
+          Перейти в каталог
+        </a>
+      </div>
+      } @else {
+      <div class="bookmarks-grid">
+        @for (bookmark of (bookmarks.value()?.items ?? []); track bookmark.id) {
+        <app-bookmark-tile
+          [bookmark]="bookmark"
+          [allStatuses]="tabs"
+          (delete)="remove($event.id, $event.yumiId)"
+          (update)="onUpdateBookmark($event)"
+        />
+        }
+      </div>
+      @if ((bookmarks.value()?.pagination?.totalPages ?? 0) > 1) {
+      <tui-pagination
+        class="bookmarks-pagination"
+        [length]="bookmarks.value()!.pagination.totalPages"
+        [index]="pageNumber() - 1"
+        (indexChange)="onPageChange($event)"
+      />
+      }
+      }
+    </section>
+    }
+  </div>

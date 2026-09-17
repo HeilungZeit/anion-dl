@@ -1,40 +1,190 @@
-<div class="page">
-  <header class="hero">
-    <span>Ваши онгоинги</span>
-    <h1>Расписание выхода</h1>
-    <p>Новые эпизоды из списков «Смотрю» и «Буду смотреть»</p>
-  </header>
-
-  @if (calendar.isLoading()) {
-    <div class="state"><tui-loader size="l" /></div>
-  } @else if (calendar.error()) {
-    <p class="state state--error">Не удалось загрузить расписание: {{ calendar.error()?.message }}</p>
-  } @else {
-    <div class="calendar">
-      @for (group of groups(); track group.key) {
-        <section class="day" [class.day--today]="group.label === 'Сегодня'">
-          <header><h2>{{ group.label }}</h2><span>{{ group.entries.length }}</span></header>
-          <div class="day__entries">
-            @for (entry of group.entries; track entry.animeId) {
-              <a class="entry" [routerLink]="['/anime', entry.animeId]">
-                <img [src]="entry.poster.medium || entry.poster.big" [alt]="entry.title" />
-                <span class="entry__body">
-                  <strong>{{ entry.title }}</strong>
-                  <span>{{ episodeLabel(entry) }}</span>
-                  <time>{{ timeLabel(entry.nextEpisodeDate) }}</time>
-                </span>
-                <span aria-hidden="true">→</span>
-              </a>
-            }
-          </div>
-        </section>
-      } @empty {
-        <div class="state state--empty">
-          <strong>Расписание пока пусто</strong>
-          <span>Добавьте онгоинги в «Смотрю» или «Буду смотреть».</span>
-          <a routerLink="/bookmarks/watching">Открыть закладки</a>
+<div class="schedule-page">
+    <header class="schedule-hero">
+      <div class="schedule-hero__icon" aria-hidden="true">
+        <tui-icon icon="@tui.calendar-days" />
+      </div>
+      <div class="schedule-hero__copy">
+        <span class="schedule-hero__eyebrow">Ваши онгоинги</span>
+        <h1>Расписание выхода</h1>
+        <p>Новые эпизоды тайтлов из списков «Смотрю» и «Буду смотреть»</p>
+      </div>
+      @if (!isLoading() && entries().length) {
+      <div class="schedule-hero__stats">
+        <div>
+          <strong>{{ scheduledEntries().length }}</strong>
+          <span>с датой выхода</span>
         </div>
+        <span class="schedule-hero__divider"></span>
+        <div>
+          <strong>{{ todayEntriesCount() }}</strong>
+          <span>сегодня</span>
+        </div>
+      </div>
+      }
+    </header>
+
+    @if (errorMessage()) {
+    <div class="error-banner" role="alert">
+      <tui-icon icon="@tui.circle-alert" />
+      <span>{{ errorMessage() }}</span>
+      <button tuiButton appearance="secondary" size="s" type="button" (click)="loadCalendar()">
+        Повторить
+      </button>
+    </div>
+    }
+
+    @if (isLoading()) {
+    <div class="calendar" aria-label="Загрузка расписания">
+      @for (day of skeletonDays; track $index) {
+      <section class="day-block">
+        <header class="day-header">
+          <span class="day-marker-skeleton"></span>
+          <div>
+            <span class="day-label-skeleton"></span>
+            <span class="day-caption-skeleton"></span>
+          </div>
+          <span class="day-count-skeleton"></span>
+        </header>
+
+        <div class="day-entries">
+          @for (card of day; track $index) {
+          <div class="entry-skeleton">
+            <span class="entry-skeleton__poster"></span>
+            <span class="entry-skeleton__content">
+              <i></i>
+              <i></i>
+              <i></i>
+            </span>
+          </div>
+          }
+        </div>
+      </section>
       }
     </div>
-  }
-</div>
+    } @else if (!errorMessage() && !entries().length) {
+    <div class="empty-state">
+      <div class="empty-state__icon">
+        <tui-icon icon="@tui.calendar-x-2" />
+      </div>
+      <h2>Расписание пока пусто</h2>
+      <p>Добавьте онгоинги в «Смотрю» или «Буду смотреть», и даты новых серий появятся здесь.</p>
+      <a tuiButton appearance="primary" routerLink="/bookmarks">
+        <tui-icon icon="@tui.bookmark" />
+        Открыть закладки
+      </a>
+    </div>
+    } @else {
+    <div class="calendar">
+      @for (group of dayGroups(); track group.date.getTime()) {
+      <section
+        class="day-block"
+        [class.day-block--today]="group.isToday"
+        [class.day-block--tomorrow]="group.isTomorrow"
+      >
+        <header class="day-header">
+          <div class="day-header__marker" aria-hidden="true">
+            <tui-icon [icon]="group.isToday ? '@tui.radio' : '@tui.calendar-days'" />
+          </div>
+          <div>
+            <span class="day-label">{{ group.label }}</span>
+            @if (group.isToday) {
+            <span class="day-caption">Сегодня</span>
+            } @else if (group.isTomorrow) {
+            <span class="day-caption">Завтра</span>
+            } @else {
+            <span class="day-caption">{{ group.entries.length }} {{ entriesCountLabel(group.entries.length) }}</span>
+            }
+          </div>
+          <span class="day-count">{{ group.entries.length }}</span>
+        </header>
+
+        <div class="day-entries">
+          @for (entry of group.entries; track entry.animeId) {
+          <a
+            [routerLink]="['/anime', entry.animeId]"
+            class="entry-card"
+            [attr.aria-label]="'Открыть аниме «' + entry.title + '»'"
+          >
+            <div class="entry-poster-wrap">
+              <img
+                class="entry-poster"
+                [src]="entry.poster.medium || entry.poster.big"
+                [alt]="'Постер: ' + entry.title"
+              />
+              <span class="entry-poster-shade" aria-hidden="true"></span>
+              <span class="entry-episode-number">{{ (entry.episodesAired ?? 0) + 1 }}</span>
+            </div>
+
+            <div class="entry-info">
+              <span class="entry-title">{{ entry.title }}</span>
+              <span class="entry-episode">
+                <tui-icon icon="@tui.tv" />
+                Следующая: {{ (entry.episodesAired ?? 0) + 1 }} серия
+                @if (entry.episodesTotal) {
+                <small>из {{ entry.episodesTotal }}</small>
+                }
+              </span>
+              <div class="entry-release">
+                <span class="entry-time">{{ formatTime(entry.nextEpisodeDate!) }}</span>
+                <span class="entry-relative">{{ entry.nextEpisodeDate! | timeUntil }}</span>
+              </div>
+            </div>
+
+            <tui-icon class="entry-chevron" icon="@tui.chevron-right" />
+          </a>
+          }
+        </div>
+      </section>
+      }
+
+      @if (unscheduledEntries().length) {
+      <section class="day-block day-block--undated">
+        <header class="day-header">
+          <div class="day-header__marker" aria-hidden="true">
+            <tui-icon icon="@tui.calendar-question" />
+          </div>
+          <div>
+            <span class="day-label">Дата уточняется</span>
+            <span class="day-caption">Анонс ещё не опубликован</span>
+          </div>
+          <span class="day-count">{{ unscheduledEntries().length }}</span>
+        </header>
+
+        <div class="day-entries">
+          @for (entry of unscheduledEntries(); track entry.animeId) {
+          <a
+            [routerLink]="['/anime', entry.animeId]"
+            class="entry-card entry-card--undated"
+            [attr.aria-label]="'Открыть аниме «' + entry.title + '»'"
+          >
+            <div class="entry-poster-wrap">
+              <img
+                class="entry-poster"
+                [src]="entry.poster.medium || entry.poster.big"
+                [alt]="'Постер: ' + entry.title"
+              />
+              <span class="entry-poster-shade" aria-hidden="true"></span>
+              <span class="entry-episode-number">{{ (entry.episodesAired ?? 0) + 1 }}</span>
+            </div>
+
+            <div class="entry-info">
+              <span class="entry-title">{{ entry.title }}</span>
+              <span class="entry-episode">
+                <tui-icon icon="@tui.tv" />
+                Следующая: {{ (entry.episodesAired ?? 0) + 1 }} серия
+                @if (entry.episodesTotal) {
+                <small>из {{ entry.episodesTotal }}</small>
+                }
+              </span>
+              <span class="entry-date-unknown">Дата выхода неизвестна</span>
+            </div>
+
+            <tui-icon class="entry-chevron" icon="@tui.chevron-right" />
+          </a>
+          }
+        </div>
+      </section>
+      }
+    </div>
+    }
+  </div>

@@ -1,0 +1,241 @@
+/* ============================================================================
+   Anion — токены дизайн-системы
+   ----------------------------------------------------------------------------
+   Источник правды. Пишется руками, не генерируется.
+
+   Все значения выведены из существующих стилей приложения
+   (`node src/design-system/scripts/audit.mjs`), а не придуманы. Там, где
+   в коде дрейф — несколько почти одинаковых значений одного и того же —
+   здесь одна ступень, а расхождение записано в ../DRIFT.md.
+
+   Тема одна: dark. Приложение форсирует <tui-root tuiTheme="dark">.
+
+   Отношение к Taiga UI: `--tui-*` — подложка, мы её читаем и НЕ
+   переопределяем. Снимок для справки — ./taiga-baseline.css.
+
+   ВАЖНО: CSS custom properties не работают внутри условий @media.
+   Токены `--anion-bp-*` ниже — справочные значения для человека и для
+   генерации, а в самих media-запросах числа приходится писать литералом.
+   ========================================================================= */
+
+:root {
+  /* ── Бренд ──────────────────────────────────────────────────────────────
+     Единственный «настоящий» брендовый цвет приложения. В коде он вписан
+     руками как rgb(25 118 210 / X%) в 24 разных прозрачностях — ступени
+     ниже закрывают все реальные применения. */
+  --anion-brand: #1976d2;
+
+  /* ── Фоны ─────────────────────────────────────────────────────────────── */
+  --anion-bg-base: #121212;          /* корневой фон приложения */
+  --anion-bg-elevated: #1c1b1b;      /* шапка, карточки авторизации */
+  --anion-bg-elevated-alpha: rgb(28 27 27 / 0.97); /* липкая шапка поверх контента */
+  --anion-bg-media: #202020;         /* подложка постера до загрузки */
+  --anion-bg-scrim: rgb(0 0 0 / 0.68); /* затемнение под модалками и меню */
+  --anion-bg-scrim-strong: rgb(0 0 0 / 0.85); /* затемнение под подписью на постере */
+
+  /* ── Чёрный с прозрачностью ─────────────────────────────────────────────
+     Отдельно от теней: в коде голый rgb(0 0 0 / X) стоит 33 раза в 20
+     ступенях — под границы, разделители и локальные затемнения, а не только
+     внутри box-shadow. Ступени взяты по частоте: 0.2 (6), 0.3 (4), 0.1 (2). */
+  --anion-black-a10: rgb(0 0 0 / 0.1);
+  --anion-black-a20: rgb(0 0 0 / 0.2);
+  --anion-black-a30: rgb(0 0 0 / 0.3);
+
+  /* ── Поверхности ────────────────────────────────────────────────────────
+     Белый с прозрачностью — основной приём «приподнятого» блока на тёмном.
+     В коде 8 ступеней (0.02 0.03 0.04 0.05 0.06 0.08 0.09 0.10); сведено к 5. */
+  --anion-surface-1: rgb(255 255 255 / 0.02);
+  --anion-surface-2: rgb(255 255 255 / 0.04);
+  --anion-surface-3: rgb(255 255 255 / 0.06);
+  --anion-surface-4: rgb(255 255 255 / 0.08);
+  --anion-surface-5: rgb(255 255 255 / 0.1);
+
+  /* ── Границы ────────────────────────────────────────────────────────────── */
+  --anion-border-subtle: rgb(255 255 255 / 0.06);
+  --anion-border: rgb(255 255 255 / 0.1);
+  --anion-border-strong: rgb(255 255 255 / 0.24);
+
+  /* ── Текст ──────────────────────────────────────────────────────────────
+     primary совпадает с тем, что приложение вписывает в --tui-text-primary.
+     secondary — из --text-secondary (hsla(0 0% 100% / 0.64)). */
+  --anion-text-primary: #e5e7eb;
+  --anion-text-secondary: rgb(255 255 255 / 0.64);
+  --anion-text-tertiary: rgb(255 255 255 / 0.42);
+  --anion-text-disabled: rgb(255 255 255 / 0.24);
+  --anion-text-on-brand: #ffffff;
+
+  /* ── Акцент: заливки ────────────────────────────────────────────────────── */
+  --anion-accent: #1976d2;
+  --anion-accent-hover: #2b8ae0;
+  --anion-accent-active: #1565c0;
+  --anion-accent-a10: rgb(25 118 210 / 0.1);   /* еле заметная подсветка строки */
+  --anion-accent-a15: rgb(25 118 210 / 0.15);  /* фон пилюли-счётчика, чипа */
+  --anion-accent-a25: rgb(25 118 210 / 0.25);  /* активное состояние таба */
+  --anion-accent-a45: rgb(25 118 210 / 0.45);  /* фокус, свечение планки */
+  --anion-accent-a60: rgb(25 118 210 / 0.6);   /* inset-обводка выбранного */
+
+  /* ── Акцент: текст и иконки на тёмном ───────────────────────────────────
+     #1976d2 на #121212 не проходит по контрасту, поэтому в коде сложилась
+     отдельная светло-синяя рампа для текста. Из 6 оттенков — 3 ступени. */
+  --anion-accent-text: #69aef0;
+  --anion-accent-text-muted: #8bc8f8;
+  --anion-accent-text-strong: #9bd0ff;
+
+  /* ── Обратная связь ─────────────────────────────────────────────────────── */
+  --anion-positive: #22c55e;
+  --anion-positive-pale: rgb(34 197 94 / 0.15);
+  --anion-positive-border: rgb(34 197 94 / 0.3);
+
+  --anion-warning: #ffc700;
+  --anion-warning-pale: rgb(255 199 0 / 0.16);
+  --anion-warning-border: rgb(255 199 0 / 0.35);
+
+  --anion-negative: #ef4444;
+  --anion-negative-text: #f87171;   /* читаемее на тёмном, чем сам --anion-negative */
+  --anion-negative-pale: rgb(239 68 68 / 0.15);
+  --anion-negative-border: rgb(239 68 68 / 0.3);
+
+  /* ── Статусы тайтла ─────────────────────────────────────────────────────
+     Плашка на постере. Собрано из трёх разошедшихся реализаций
+     (anime-tile, catalog-tile, bookmark-tile): яркая заливка + тёмный текст. */
+  --anion-status-anons-bg: rgb(252 211 77 / 0.9);
+  --anion-status-anons-fg: #451a03;
+  --anion-status-ongoing-bg: rgb(74 222 128 / 0.9);
+  --anion-status-ongoing-fg: #062a16;
+  --anion-status-released-bg: rgb(96 165 250 / 0.9);
+  --anion-status-released-fg: #172554;
+
+  /* ── Скелетоны ──────────────────────────────────────────────────────────
+     В коде четыре разных пары base/highlight. Здесь одна. */
+  --anion-skeleton-base: #292929;
+  --anion-skeleton-highlight: #414141;
+
+  /* ── Радиусы ────────────────────────────────────────────────────────────── */
+  --anion-radius-xs: 6px;
+  --anion-radius-sm: 8px;
+  --anion-radius-md: 10px;
+  --anion-radius-lg: 12px;
+  --anion-radius-xl: 14px;
+  --anion-radius-2xl: 16px;
+  --anion-radius-pill: 999px;
+  --anion-radius-circle: 50%;
+
+  /* ── Размеры иконок ─────────────────────────────────────────────────────
+     `tui-icon { width/height }` переопределяется в 33 блоках в 16 файлах, 12
+     разными размерами. Ступени выбраны по частоте блоков: 20px (9), 18 (5),
+     16 (5), 15 (3), затем 24/30 (по 2), 13/40 (по 1). Имена — по значению, как
+     у space и font-size.
+
+     Правило подбора: иконка на одну-две ступени крупнее шрифта рядом.
+     Оговорка: в Taiga 5 `tui-icon` управляется через font-size / --t-size, а
+     не width/height. Эти токены описывают то, что в коде есть сейчас; переход
+     на идиоматичный font-size — отдельная задача. */
+  --anion-icon-13: 13px;   /* рейтинг и мета на постере, рядом с текстом 12px */
+  --anion-icon-15: 15px;
+  --anion-icon-16: 16px;   /* рядом с текстом 13-14px */
+  --anion-icon-18: 18px;   /* в кнопках */
+  --anion-icon-20: 20px;   /* в баннерах и полях — самый частый */
+  --anion-icon-24: 24px;   /* навигация */
+  --anion-icon-30: 30px;   /* пустые состояния */
+  --anion-icon-40: 40px;   /* крупная заглушка (admin) */
+
+  /* ── Отступы ────────────────────────────────────────────────────────────
+     Имена = значения в px. Так честнее и не требует сверки с таблицей:
+     шкала выведена по частоте использования, а не по t-shirt-размерам. */
+  --anion-space-2: 2px;
+  --anion-space-4: 4px;
+  --anion-space-6: 6px;
+  --anion-space-8: 8px;
+  --anion-space-10: 10px;
+  --anion-space-12: 12px;
+  --anion-space-16: 16px;
+  --anion-space-20: 20px;
+  --anion-space-24: 24px;
+  --anion-space-32: 32px;
+  --anion-space-40: 40px;
+
+  /* ── Типографика ────────────────────────────────────────────────────────
+     Семейство приходит из @taiga-ui/styles/taiga-ui-fonts.less — своих
+     @font-face у приложения нет. Дублируем значение, чтобы превью были
+     самодостаточными. */
+  --anion-font-family: 'Manrope', system-ui, sans-serif;
+
+  --anion-font-size-10: 10px;   /* мелкие плашки */
+  --anion-font-size-11: 11px;
+  --anion-font-size-12: 12px;
+  --anion-font-size-13: 13px;
+  --anion-font-size-14: 14px;   /* базовый размер интерфейса */
+  --anion-font-size-16: 16px;
+  --anion-font-size-18: 18px;
+  --anion-font-size-20: 20px;
+  --anion-font-size-24: 24px;
+  --anion-font-size-28: 28px;   /* заголовок страницы */
+
+  --anion-font-weight-normal: 400;
+  --anion-font-weight-medium: 500;
+  --anion-font-weight-semibold: 600;  /* доминирующий вес в интерфейсе */
+  --anion-font-weight-bold: 700;
+
+  --anion-line-height-tight: 1.2;
+  --anion-line-height-snug: 1.35;
+  --anion-line-height-normal: 1.5;
+
+  --anion-letter-spacing-tight: -0.01em;
+  --anion-letter-spacing-heading: -0.025em;
+
+  /* ── Анимация ───────────────────────────────────────────────────────────
+     180ms — доминирующая длительность (44 использования), она и есть base. */
+  --anion-duration-fast: 160ms;
+  --anion-duration-base: 180ms;
+  --anion-duration-slow: 300ms;
+  --anion-duration-shimmer: 1.5s;
+  --anion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Тени ───────────────────────────────────────────────────────────────
+     focus-ring — один рецепт вместо девяти вариаций обводки акцентом. */
+  --anion-shadow-hairline: 0 0 0 1px rgb(255 255 255 / 0.05);
+  --anion-shadow-card: 0 4px 20px rgb(0 0 0 / 0.2);
+  --anion-shadow-card-hover: 0 12px 32px rgb(0 0 0 / 0.28);
+  --anion-shadow-modal: 0 8px 32px rgb(0 0 0 / 0.3);
+  --anion-shadow-popup: 0 14px 34px rgb(0 0 0 / 0.24);
+  --anion-shadow-accent-glow: 0 6px 16px rgb(25 118 210 / 0.28);
+  --anion-focus-ring: 0 0 0 2px var(--anion-accent-a45);
+  /* Тот же рецепт, но внутрь. Нужен там, где предок с overflow: hidden обрезал
+     бы внешнюю обводку и фокус с клавиатуры стал бы невидимым — например у
+     плиток закладок. Свести оба варианта в один нельзя: это не оттенок, а
+     разное геометрическое поведение. */
+  --anion-focus-ring-inset: inset 0 0 0 2px var(--anion-accent-a45);
+
+  /* ── Градиенты ──────────────────────────────────────────────────────────── */
+  --anion-gradient-glass: linear-gradient(
+    145deg,
+    rgb(255 255 255 / 0.06),
+    rgb(255 255 255 / 0.03)
+  );
+  --anion-gradient-accent: linear-gradient(135deg, #2b8ae0, #1565c0);
+  --anion-gradient-poster-shade: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.85),
+    rgb(0 0 0 / 0.35),
+    transparent
+  );
+  --anion-gradient-skeleton: linear-gradient(
+    100deg,
+    var(--anion-skeleton-base) 30%,
+    var(--anion-skeleton-highlight) 46%,
+    var(--anion-skeleton-base) 62%
+  );
+
+  /* ── Раскладка ──────────────────────────────────────────────────────────
+     Брейкпоинты — справочные: в @media их нельзя подставить через var().
+     Реальные точки перелома в приложении: 480 / 640 / 768 / 1024. */
+  --anion-bp-xs: 480px;
+  --anion-bp-sm: 640px;
+  --anion-bp-md: 768px;
+  --anion-bp-lg: 1024px;
+  --anion-container-max: 1670px;
+  --anion-catalog-tile-min: 440px;
+  --anion-catalog-tile-min-compact: 400px;
+  --anion-header-height: 60px;
+  --anion-touch-target: 44px;
+}

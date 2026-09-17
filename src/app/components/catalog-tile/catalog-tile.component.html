@@ -1,0 +1,32 @@
+<article class="tile-container">
+  <a
+    class="tile-link"
+    [routerLink]="['/anime', anime().animeId]"
+    [attr.aria-label]="'Открыть аниме «' + anime().title + '»'"
+  >
+    <div class="poster">
+      <img [src]="anime().poster.big" [alt]="'Постер: ' + anime().title" />
+      <span class="poster-shade" aria-hidden="true"></span>
+      @if (anime().animeStatus) {
+      <span class="status" [class.status--ongoing]="anime().animeStatus.alias === 'ongoing'" [class.status--released]="anime().animeStatus.alias === 'released'">{{ anime().animeStatus.title }}</span>
+      }
+      <div class="poster-meta">
+        <span><tui-icon icon="@tui.star" />{{ anime().rating.average.toFixed(1) }}</span>
+        <span><tui-icon icon="@tui.eye" />{{ anime().views || 0 | tuiFormatNumber }}</span>
+      </div>
+    </div>
+
+    <div class="tile-content">
+      <div class="tile-content__top">
+        <div class="tile-kicker">{{ anime().type.name }} · {{ anime().year }}</div>
+        <h2 class="tile-title" [title]="anime().title">{{ anime().title }}</h2>
+        @if (anime().minAge.titleLong) {
+        <span class="age-badge">{{ anime().minAge.titleLong }}</span>
+        }
+      </div>
+      @if (anime().genres && anime().genres.length > 0) {
+        <p class="genres">{{ genres }}</p>
+      }
+    </div>
+  </a>
+</article>

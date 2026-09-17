@@ -1,0 +1,73 @@
+// СГЕНЕРИРОВАНО из tokens/tokens.css — руками не править.
+// Обновить: node src/design-system/scripts/build-scss.mjs
+//
+// Зачем этот файл вообще нужен: var() нелегален в условиях @media, поэтому
+// --anion-bp-* нельзя подставить в media-запрос. Sass — единственный слой,
+// который это может. Источник правды остаётся tokens.css.
+//
+// Подключение (includePaths уже настроен в angular.json, оба таргета):
+//   @use 'breakpoints' as bp;
+//   .foo { @include bp.md { ... } }
+
+$bp-xs: 480px;
+$bp-sm: 640px;
+$bp-md: 768px;
+$bp-lg: 1024px;
+$container-max: 1670px;
+
+// Миксины «до» — приложение desktop-first, 121 из 124 media-запросов на max-width.
+@mixin xs {
+  @media (max-width: $bp-xs) {
+    @content;
+  }
+}
+
+@mixin sm {
+  @media (max-width: $bp-sm) {
+    @content;
+  }
+}
+
+@mixin md {
+  @media (max-width: $bp-md) {
+    @content;
+  }
+}
+
+@mixin lg {
+  @media (max-width: $bp-lg) {
+    @content;
+  }
+}
+
+// Миксины «от» — для тех трёх мест, где логика обратная.
+@mixin xs-up {
+  @media (min-width: $bp-xs) {
+    @content;
+  }
+}
+
+@mixin sm-up {
+  @media (min-width: $bp-sm) {
+    @content;
+  }
+}
+
+@mixin md-up {
+  @media (min-width: $bp-md) {
+    @content;
+  }
+}
+
+@mixin lg-up {
+  @media (min-width: $bp-lg) {
+    @content;
+  }
+}
+
+// Шире контейнера — единственный случай min-width: $container-max в приложении.
+@mixin wide {
+  @media (min-width: $container-max) {
+    @content;
+  }
+}

@@ -1,0 +1,429 @@
+@use 'breakpoints' as bp;
+
+:host {
+  display: block;
+  min-width: 0;
+  height: 100%;
+}
+
+.bookmark-tile {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid var(--anion-surface-4);
+  border-radius: var(--anion-radius-xl);
+  background: linear-gradient(145deg, var(--anion-surface-3), var(--anion-surface-1));
+  box-sizing: border-box;
+  transition: border-color var(--anion-duration-base) ease, box-shadow var(--anion-duration-base) ease, transform var(--anion-duration-base) ease;
+
+  &:hover {
+    border-color: var(--anion-accent-a45);
+    box-shadow: 0 14px 34px var(--anion-black-a20);
+    transform: translateY(-3px);
+  }
+
+  &--editing {
+    height: auto;
+  }
+}
+
+.poster-link {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  background: var(--anion-bg-media);
+  isolation: isolate;
+  outline: none;
+
+  &::after {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    pointer-events: none;
+    background: var(--anion-surface-3);
+    content: '';
+    opacity: 0;
+    transition: opacity var(--anion-duration-slow) ease;
+  }
+
+  .bookmark-tile:hover &::after,
+  &:focus-visible::after {
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring-inset);
+  }
+}
+
+.poster {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.poster-shade {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: calc(var(--anion-space-2) * -1);
+  left: 0;
+  height: calc(48% + 4px);
+  pointer-events: none;
+  background: linear-gradient(to top, rgb(0 0 0 / 88%), var(--anion-black-a30), transparent);
+}
+
+.anime-status {
+  position: absolute;
+  z-index: 3;
+  top: 9px;
+  left: 9px;
+  max-width: calc(100% - 18px);
+  padding: var(--anion-space-4) 7px;
+  overflow: hidden;
+  border-radius: var(--anion-radius-xs);
+  background: rgb(255 255 255 / 86%);
+  color: var(--anion-bg-media);
+  font-size: var(--anion-font-size-10);
+  font-weight: 750;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &--ongoing {
+    background: rgb(74 222 128 / 92%);
+    color: var(--anion-status-ongoing-fg);
+  }
+
+  &--released {
+    background: rgb(96 165 250 / 92%);
+    color: var(--anion-status-released-fg);
+  }
+
+  &--anons {
+    background: rgb(252 211 77 / 92%);
+    color: var(--anion-status-anons-fg);
+  }
+}
+
+.poster-progress {
+  position: absolute;
+  z-index: 3;
+  right: var(--anion-space-10);
+  bottom: var(--anion-space-10);
+  left: var(--anion-space-10);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--anion-space-6);
+  color: var(--anion-text-on-brand);
+  font-size: var(--anion-font-size-12);
+  font-weight: 650;
+
+  tui-icon {
+    width: var(--anion-icon-15);
+    height: var(--anion-icon-15);
+    color: var(--anion-accent-text-strong);
+  }
+}
+
+.info {
+  display: flex;
+  min-width: 0;
+  padding: 13px;
+  flex: 1;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.title {
+  display: -webkit-box;
+  min-height: 2.7em;
+  margin: 0;
+  overflow: hidden;
+  color: var(--anion-text-primary);
+  font-size: var(--anion-font-size-14);
+  font-weight: 650;
+  line-height: var(--anion-line-height-snug);
+  letter-spacing: var(--anion-letter-spacing-tight);
+  outline: none;
+  text-overflow: ellipsis;
+  transition: color var(--anion-duration-base) ease;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--anion-accent-text-muted);
+  }
+}
+
+.progress-block {
+  display: grid;
+  gap: var(--anion-space-6);
+}
+
+.progress-block__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: var(--anion-font-size-11);
+
+  strong {
+    color: rgb(255 255 255 / 72%);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.progress-track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-surface-4);
+
+  span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--anion-accent), var(--anion-accent-text));
+  }
+}
+
+.actions {
+  display: flex;
+  margin-top: auto;
+  padding-top: var(--anion-space-2);
+  gap: var(--anion-space-6);
+}
+
+.action-btn {
+  flex: 1;
+  border-radius: var(--anion-radius-sm) !important;
+
+  tui-icon {
+    width: var(--anion-icon-15);
+    height: var(--anion-icon-15);
+  }
+
+  span {
+    font-size: var(--anion-font-size-11);
+  }
+
+  &--icon {
+    width: 36px;
+    flex: 0 0 36px;
+  }
+}
+
+.delete-btn {
+  color: var(--anion-negative-text) !important;
+
+  &:hover {
+    background: rgb(239 68 68 / 10%) !important;
+  }
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-12);
+}
+
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-6);
+
+  label {
+    color: var(--text-secondary);
+    font-size: var(--anion-font-size-10);
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
+
+.status-selector {
+  width: 100%;
+  justify-content: space-between;
+
+  tui-icon {
+    width: var(--anion-icon-15);
+    height: var(--anion-icon-15);
+  }
+}
+
+.episodes-counter {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-8);
+
+  button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+
+    tui-icon {
+      width: var(--anion-icon-15);
+      height: var(--anion-icon-15);
+    }
+  }
+}
+
+.episodes-value {
+  flex: 1;
+  color: var(--anion-text-primary);
+  font-size: 15px;
+  font-weight: 650;
+  text-align: center;
+
+  small {
+    color: var(--text-secondary);
+    font-size: var(--anion-font-size-12);
+  }
+}
+
+.edit-actions {
+  display: flex;
+  margin-top: var(--anion-space-2);
+  padding-top: var(--anion-space-12);
+  gap: var(--anion-space-8);
+  border-top: 1px solid var(--anion-surface-4);
+
+  button {
+    flex: 1;
+  }
+}
+
+.confirm-overlay {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  padding: var(--anion-space-16);
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  background: rgb(10 10 10 / 90%);
+  backdrop-filter: blur(5px);
+}
+
+.confirm-content {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  text-align: center;
+
+  p {
+    margin: 14px 0 var(--anion-space-4);
+    color: var(--anion-text-primary);
+    font-size: var(--anion-font-size-16);
+    font-weight: 650;
+  }
+
+  > span {
+    color: var(--text-secondary);
+    font-size: var(--anion-font-size-12);
+  }
+}
+
+.confirm-content__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: var(--anion-radius-xl);
+  background: rgb(239 68 68 / 13%);
+  color: var(--anion-negative-text);
+
+  tui-icon {
+    width: var(--anion-icon-24);
+    height: var(--anion-icon-24);
+  }
+}
+
+.confirm-actions {
+  display: flex;
+  margin-top: 18px;
+  gap: var(--anion-space-8);
+  justify-content: center;
+}
+
+[tuiOption] {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-8);
+
+  tui-icon {
+    width: var(--anion-icon-16);
+    height: var(--anion-icon-16);
+  }
+
+  &.selected {
+    background: var(--secondary-color);
+    color: var(--anion-text-on-brand);
+  }
+}
+
+@include bp.md {
+  .info {
+    padding: var(--anion-space-10);
+    gap: 9px;
+  }
+
+  .title {
+    font-size: var(--anion-font-size-13);
+  }
+
+  .poster-progress {
+    right: var(--anion-space-8);
+    bottom: var(--anion-space-8);
+    left: var(--anion-space-8);
+    font-size: var(--anion-font-size-11);
+  }
+
+  .action-btn span {
+    display: none;
+  }
+
+  .action-btn {
+    width: 36px;
+    flex: 1 1 36px;
+  }
+
+  .actions {
+    justify-content: flex-end;
+  }
+}
+
+// 460px — вне шкалы брейкпоинтов. Одиночная точка под этот элемент, не ступень шкалы (ближайшая — bp.xs 480px).
+@media (max-width: 460px) {
+  .edit-actions {
+    flex-direction: column-reverse;
+  }
+
+  .anime-status {
+    top: 7px;
+    left: 7px;
+    max-width: calc(100% - 14px);
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bookmark-tile,
+  .poster-link::after,
+  .title {
+    transition: none;
+  }
+}
+
+a { text-decoration: none; }

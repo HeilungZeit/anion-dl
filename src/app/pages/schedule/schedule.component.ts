@@ -4,103 +4,144 @@ import {
   computed,
   effect,
   inject,
-  resource,
-  untracked,
+  signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { TuiLoader } from '@taiga-ui/core';
+import { TuiButton, TuiIcon } from '@taiga-ui/core';
 
-import type { CalendarEntry } from '../../api/account.types';
 import { BookmarksService } from '../../api/bookmarks.service';
 import { UserService } from '../../api/user.service';
+import { CalendarEntry } from '../../api/account.types';
+import { TimeUntilPipe } from '../../pipes/time-until.pipe';
 
-interface CalendarGroup {
-  key: string;
+interface DayGroup {
   label: string;
+  date: Date;
+  isToday: boolean;
+  isTomorrow: boolean;
   entries: CalendarEntry[];
 }
 
 @Component({
   selector: 'app-schedule',
-  imports: [RouterLink, TuiLoader],
+  imports: [RouterLink, TuiIcon, TuiButton, TimeUntilPipe],
   templateUrl: './schedule.component.html',
   styleUrl: './schedule.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ScheduleComponent {
-  private readonly api = inject(BookmarksService);
-  private readonly user = inject(UserService);
-  private readonly router = inject(Router);
+  private bookmarksService = inject(BookmarksService);
+  private router = inject(Router);
+  protected userStore = inject(UserService);
 
-  readonly calendar = resource({
-    params: () => (this.user.isAuthenticated() ? true : undefined),
-    loader: () => this.api.getCalendar(),
-  });
-
-  readonly groups = computed<CalendarGroup[]>(() => {
-    const dated = new Map<string, CalendarEntry[]>();
-
-    for (const entry of this.calendar.value() ?? []) {
-      const key = entry.nextEpisodeDate
-        ? this.dateKey(new Date(entry.nextEpisodeDate * 1000))
-        : 'unknown';
-      dated.set(key, [...(dated.get(key) ?? []), entry]);
-    }
-
-    return [...dated.entries()]
-      .sort(([left], [right]) => {
-        if (left === 'unknown') return 1;
-        if (right === 'unknown') return -1;
-        return left.localeCompare(right);
-      })
-      .map(([key, entries]) => ({
-        key,
-        label: key === 'unknown' ? 'Дата уточняется' : this.dateLabel(key),
-        entries,
-      }));
-  });
+  isLoading = signal(true);
+  errorMessage = signal<string | null>(null);
+  entries = signal<CalendarEntry[]>([]);
+  // Группы-дни скелетона: числа — количество карточек в дне. Неровные значения
+  // не случайны, они повторяют типичную форму расписания, где в дне 2–4 релиза.
+  readonly skeletonDays = [[1, 2, 3, 4], [1, 2], [1, 2, 3], [1, 2]];
 
   constructor() {
     effect(() => {
-      if (this.user.isInitialized() && !this.user.isAuthenticated()) {
-        untracked(() => void this.router.navigate(['/login']));
+      const isInitialized = this.userStore.isInitialized();
+      const isAuthenticated = this.userStore.isAuthenticated();
+      if (isInitialized && !isAuthenticated) {
+        this.router.navigate(['/login']);
+      } else if (isInitialized && isAuthenticated) {
+        this.loadCalendar();
       }
     });
   }
 
-  episodeLabel(entry: CalendarEntry): string {
-    return `${(entry.episodesAired ?? 0) + 1} серия`;
+  async loadCalendar(): Promise<void> {
+    this.isLoading.set(true);
+    this.errorMessage.set(null);
+    try {
+      const data = await this.bookmarksService.getCalendar();
+      this.entries.set(data);
+    } catch (err: unknown) {
+      this.errorMessage.set(err instanceof Error ? err.message : 'Ошибка при загрузке расписания');
+    } finally {
+      this.isLoading.set(false);
+    }
   }
 
-  timeLabel(timestamp: number | undefined): string {
-    return timestamp
-      ? new Intl.DateTimeFormat('ru-RU', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(timestamp * 1000)
-      : 'Время неизвестно';
-  }
+  readonly scheduledEntries = computed(() =>
+    this.entries().filter((e) => !!e.nextEpisodeDate)
+  );
 
-  private dateKey(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
+  readonly unscheduledEntries = computed(() =>
+    this.entries().filter((e) => !e.nextEpisodeDate)
+  );
 
-  private dateLabel(key: string): string {
-    const date = new Date(`${key}T00:00:00`);
+  readonly dayGroups = computed<DayGroup[]>(() => {
+    const scheduled = this.scheduledEntries();
+    if (!scheduled.length) return [];
+
+    const map = new Map<string, CalendarEntry[]>();
+
+    for (const entry of scheduled) {
+      const d = new Date(entry.nextEpisodeDate! * 1000);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(entry);
+    }
+
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    if (key === this.dateKey(today)) return 'Сегодня';
-    if (key === this.dateKey(tomorrow)) return 'Завтра';
+    const groups: DayGroup[] = [];
 
-    return new Intl.DateTimeFormat('ru-RU', {
+    for (const [, dayEntries] of map) {
+      const d = new Date(dayEntries[0].nextEpisodeDate! * 1000);
+      const dayStart = new Date(d);
+      dayStart.setHours(0, 0, 0, 0);
+
+      groups.push({
+        label: this.formatDayLabel(d),
+        date: d,
+        isToday: dayStart.getTime() === today.getTime(),
+        isTomorrow: dayStart.getTime() === tomorrow.getTime(),
+        entries: dayEntries,
+      });
+    }
+
+    return groups.sort((a, b) => a.date.getTime() - b.date.getTime());
+  });
+
+  readonly todayEntriesCount = computed(
+    () => this.dayGroups().find((group) => group.isToday)?.entries.length ?? 0
+  );
+
+  formatTime(timestamp: number): string {
+    return new Date(timestamp * 1000).toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  private formatDayLabel(date: Date): string {
+    return date.toLocaleDateString('ru-RU', {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
-    }).format(date);
+    });
+  }
+
+  entriesCountLabel(count: number): string {
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+
+    if (mod10 === 1 && mod100 !== 11) {
+      return 'релиз';
+    }
+
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+      return 'релиза';
+    }
+
+    return 'релизов';
   }
 }

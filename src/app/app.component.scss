@@ -434,3 +434,8 @@
     padding: 0;
   }
 }
+
+.content:has(> app-bookmarks, > app-seasons, > app-schedule, > app-search) {
+  padding: 0;
+  background: var(--anion-bg-base);
+}

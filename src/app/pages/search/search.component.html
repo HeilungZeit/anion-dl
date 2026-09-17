@@ -1,30 +1,83 @@
-<div class="page">
-  <header><span>Поиск</span><h1>Найти аниме</h1></header>
-  <label class="search">
-    <span aria-hidden="true">⌕</span>
-    <input autofocus placeholder="Название аниме" [ngModel]="draft()" (ngModelChange)="onInput($event)" />
-  </label>
+<!-- Пока запрос не введён, показывать под полем нечего — герой в этом случае
+       занимает экран целиком, чтобы поиск выглядел законченным экраном, а не
+       шапкой над пустотой. -->
+  <section class="search-hero" [class.search-hero--idle]="!hasEnoughInput()">
+    <span class="search-hero__glow" aria-hidden="true"></span>
 
-  <section [class.results--loading]="results.isLoading()">
-    @if (results.error()) {
-      <p class="state state--error">Ошибка поиска: {{ results.error()?.message }}</p>
-    } @else if (!q().trim()) {
-      <p class="state">Введите название аниме</p>
-    } @else if (items().length === 0 && results.isLoading()) {
-      <div class="state"><tui-loader size="l" /></div>
-    } @else {
-      <p class="count">Найдено: {{ items().length }}</p>
-      <div class="grid">
-        @for (anime of items(); track anime.animeId) {
-          <app-anime-card
-            [animeId]="anime.animeId" [title]="anime.title" [poster]="anime.poster"
-            [year]="anime.year" [type]="anime.type.name"
-            [statusTitle]="anime.animeStatus.title" [statusAlias]="anime.animeStatus.alias"
-            [rating]="anime.rating.average" [episodesAired]="anime.episodes?.aired"
-            [episodesCount]="anime.episodes?.count"
-          />
-        } @empty { <p class="state">Ничего не найдено</p> }
+    <div class="search-hero__copy">
+      <span class="search-hero__eyebrow">
+        <tui-icon icon="@tui.search" />
+        Поиск по каталогу
+      </span>
+      <h1 class="search-hero__title">Найдите аниме по названию</h1>
+      <p class="search-hero__subtitle">
+        Введите оригинальное или русское название — от трёх символов
+      </p>
+    </div>
+
+    <div class="search-field" [class.search-field--filled]="draft()" (click)="searchInput.focus()">
+      <tui-icon icon="@tui.search" class="search-field__icon" />
+      <input
+        #searchInput
+        class="search-field__input"
+        type="search"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Например, Стальной алхимик"
+        aria-label="Поиск аниме"
+        [ngModel]="draft()"
+        (ngModelChange)="onInput($event)"
+      />
+      @if (draft()) {
+        <button class="search-field__clear" type="button" aria-label="Очистить поиск" (click)="onInput(''); searchInput.focus()">
+          <tui-icon icon="@tui.x" />
+        </button>
+      }
+    </div>
+
+    <!-- Строка занимает место всегда, пока запрос достаточно длинный: если
+         показывать её только по готовности ответа, её появление сдвигает всю
+         сетку плиток вниз. Меняется только число, а не наличие строки. -->
+    @if (hasEnoughInput()) {
+      <p class="search-hero__count" aria-live="polite">
+        @if (isCountPending()) {
+          Найдено: <span class="search-hero__count-skeleton" aria-hidden="true"></span>
+        } @else if (items().length) {
+          Найдено: <b>{{ items().length }}</b>@if (items().length === 60) {<span>+</span>}
+        } @else {
+          Ничего не найдено
+        }
+      </p>
+    }
+  </section>
+
+  <section class="search-list">
+    @if (hasEnoughInput() && results.error()) {
+      <div class="search-state" role="alert"><span class="search-state__title">Не удалось загрузить результаты</span><span class="search-state__hint">{{ results.error()?.message }}</span><button class="search-field__clear" type="button" aria-label="Повторить поиск" (click)="results.reload()"><tui-icon icon="@tui.rotate-ccw" /></button></div>
+    } @else if (hasEnoughInput() && items().length > 0) {
+      @for (anime of items(); track anime.animeId; let last = $last) {
+        <app-catalog-tile
+          [anime]="anime"
+        ></app-catalog-tile>
+      }
+    } @else if (hasEnoughInput() && isCountPending()) {
+      <div class="search-state">
+        <div class="search-state__spinner"></div>
+        <span class="search-state__hint">Ищем аниме...</span>
+      </div>
+    } @else if (hasEnoughInput()) {
+      <div class="search-state">
+        <tui-icon icon="@tui.search-x" class="search-state__icon" />
+        <span class="search-state__title">Ничего не найдено</span>
+        <span class="search-state__hint">
+          Проверьте написание или попробуйте другое название — иногда помогает оригинальное
+        </span>
       </div>
     }
   </section>
-</div>
+
+  @if (results.isLoading() && items().length > 0) {
+    <div class="search-more" aria-hidden="true">
+      <div class="search-state__spinner"></div>
+    </div>
+  }

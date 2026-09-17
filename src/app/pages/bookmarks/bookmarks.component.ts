@@ -5,11 +5,17 @@ import {
   effect,
   inject,
   input,
+  linkedSignal,
   resource,
+  signal,
   untracked,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { TuiLoader } from '@taiga-ui/core';
+import { FormsModule } from '@angular/forms';
+import { TuiButton, TuiDataList, TuiIcon, TuiTextfield } from '@taiga-ui/core';
+import { TuiChevron, TuiPagination, TuiSelect } from '@taiga-ui/kit';
+import { BookmarkTileComponent } from '../../components/bookmark-tile/bookmark-tile.component';
+import type { Bookmark, BookmarkCounts } from '../../api/account.types';
 
 import {
   BookmarkStatus,
@@ -31,19 +37,21 @@ const VALID_SORTS = new Set<BookmarkSort>([
 interface BookmarkTab {
   status: BookmarkStatusValue;
   label: string;
+  key: string;
+  icon: string;
 }
 
 const TABS: readonly BookmarkTab[] = [
-  { status: BookmarkStatus.Watching, label: 'Смотрю' },
-  { status: BookmarkStatus.WillWatch, label: 'Буду смотреть' },
-  { status: BookmarkStatus.Watched, label: 'Просмотрено' },
-  { status: BookmarkStatus.OnHold, label: 'Отложено' },
-  { status: BookmarkStatus.Dropped, label: 'Брошено' },
+  { key: 'watching', icon: '@tui.play', status: BookmarkStatus.Watching, label: 'Смотрю' },
+  { key: 'will_watch', icon: '@tui.clock', status: BookmarkStatus.WillWatch, label: 'Буду смотреть' },
+  { key: 'watched', icon: '@tui.check', status: BookmarkStatus.Watched, label: 'Просмотрено' },
+  { key: 'on_hold', icon: '@tui.pause', status: BookmarkStatus.OnHold, label: 'Отложено' },
+  { key: 'dropped', icon: '@tui.x', status: BookmarkStatus.Dropped, label: 'Брошено' },
 ];
 
 @Component({
   selector: 'app-bookmarks',
-  imports: [RouterLink, TuiLoader],
+  imports: [RouterLink, FormsModule, TuiButton, TuiIcon, TuiTextfield, TuiChevron, TuiDataList, TuiSelect, TuiPagination, BookmarkTileComponent],
   templateUrl: './bookmarks.component.html',
   styleUrl: './bookmarks.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -91,6 +99,37 @@ export class BookmarksComponent {
       this.api.getPage({ ...params, pageSize: PAGE_SIZE }),
   });
 
+  readonly counts = linkedSignal<BookmarkCounts | undefined, BookmarkCounts | undefined>({
+    source: () => this.bookmarks.hasValue() ? this.bookmarks.value().counts : undefined,
+    computation: (value, previous) => value ?? previous?.value,
+  });
+  readonly mutationError = signal('');
+  readonly totalCount = computed(() => Object.values(this.counts() ?? {}).reduce((sum, count) => sum + count, 0));
+  readonly skeletonTabs = [1, 2, 3, 4, 5];
+  readonly skeletonCards = Array.from({ length: 12 }, (_, i) => i);
+  readonly sortOptions = [
+    { value: 'created_desc', label: 'Сначала новые' },
+    { value: 'created_asc', label: 'Сначала старые' },
+    { value: 'title_asc', label: 'По названию А–Я' },
+    { value: 'title_desc', label: 'По названию Я–А' },
+  ];
+  readonly stringifySort = (value: string): string => this.sortOptions.find(option => option.value === value)?.label ?? value;
+  readonly errorMessage = computed(() => this.mutationError() || this.bookmarks.error()?.message || '');
+  onPageChange(index: number): void {
+    void this.router.navigate([], { queryParams: { page: index ? index + 1 : null }, queryParamsHandling: 'merge' });
+  }
+  bookmarksCountLabel(): string {
+    const count = this.bookmarks.hasValue() ? this.bookmarks.value().pagination.totalItems : 0;
+    return count % 10 === 1 && count % 100 !== 11 ? 'тайтл' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'тайтла' : 'тайтлов';
+  }
+  async onUpdateBookmark(data: { bookmark: Bookmark; status: BookmarkStatusValue; animeStatus: string }): Promise<void> {
+    this.mutationError.set('');
+    try {
+      await this.api.update(data.bookmark.yumiId, { status: data.status, animeStatus: data.animeStatus });
+      this.bookmarks.reload();
+    } catch { this.mutationError.set('Не удалось обновить закладку. Попробуйте ещё раз.'); }
+  }
+
   constructor() {
     effect(() => {
       if (this.user.isInitialized() && !this.user.isAuthenticated()) {
@@ -100,11 +139,10 @@ export class BookmarksComponent {
   }
 
   tabCount(status: BookmarkStatusValue): number {
-    return this.bookmarks.value()?.counts[status] ?? 0;
+    return this.counts()?.[status] ?? 0;
   }
 
-  changeSort(event: Event): void {
-    const sort = (event.target as HTMLSelectElement).value;
+  onSortChange(sort: string): void {
     void this.router.navigate([], {
       queryParams: { sort: sort === DEFAULT_SORT ? null : sort, page: null },
       queryParamsHandling: 'merge',
@@ -112,7 +150,10 @@ export class BookmarksComponent {
   }
 
   async remove(id: string, animeId: number): Promise<void> {
-    await this.api.delete(id, animeId);
-    this.bookmarks.reload();
+    this.mutationError.set('');
+    try {
+      await this.api.delete(id, animeId);
+      this.bookmarks.reload();
+    } catch { this.mutationError.set('Не удалось удалить закладку. Попробуйте ещё раз.'); }
   }
 }

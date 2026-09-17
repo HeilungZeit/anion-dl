@@ -1,12 +1,348 @@
+@use 'breakpoints' as bp;
+
 :host { display: block; }
-.page { max-inline-size: var(--anion-container-max); margin-inline: auto; }
-header span { color: var(--anion-accent-text); font-size: var(--anion-font-size-12); text-transform: uppercase; }
-header h1 { margin: var(--anion-space-6) 0 var(--anion-space-20); }
-.controls { display: flex; flex-wrap: wrap; gap: var(--anion-space-12); margin-block-end: var(--anion-space-24); }
-.controls nav { display: flex; gap: var(--anion-space-6); }
-select, button { padding: var(--anion-space-8) var(--anion-space-12); border: 1px solid var(--anion-border); border-radius: var(--anion-radius-md); background: var(--anion-surface-2); color: inherit; font: inherit; }
-button { cursor: pointer; }
-button.active { border-color: var(--anion-accent-a45); background: var(--anion-accent-a15); color: var(--anion-accent-text); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--anion-space-20) var(--anion-space-12); }
-.state { grid-column: 1 / -1; display: grid; min-block-size: 180px; place-items: center; color: var(--anion-text-secondary); }
-.state--error { color: var(--anion-negative-text); }
+
+.seasons-page {
+  // Auto margins on a flex child otherwise make its width depend on the results.
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  max-width: var(--anion-container-max);
+  margin: 0 auto;
+  padding: 28px var(--anion-space-20) 48px;
+}
+
+.page-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-16);
+  margin-bottom: var(--anion-space-24);
+}
+
+.heading-accent {
+  width: var(--anion-space-4);
+  align-self: stretch;
+  flex-shrink: 0;
+  border-radius: var(--anion-radius-pill);
+  background: var(--season-accent);
+}
+
+h1 {
+  margin: 0 0 var(--anion-space-4);
+  font-size: var(--anion-font-size-28);
+  font-weight: var(--anion-font-weight-semibold);
+  letter-spacing: var(--anion-letter-spacing-heading);
+  line-height: var(--anion-line-height-tight);
+}
+
+p { margin: 0; color: var(--anion-text-secondary); line-height: var(--anion-line-height-normal); }
+.page-heading p { font-size: var(--anion-font-size-13); }
+.current-season { flex-shrink: 0; color: var(--season-accent); }
+
+.season-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-16);
+  padding: var(--anion-space-12);
+  border: 1px solid var(--season-border);
+  border-radius: var(--anion-radius-lg);
+  background: linear-gradient(110deg, var(--season-wash), transparent 80%), var(--anion-surface-1);
+}
+
+.picker-main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--anion-space-24); min-width: 0; width: 100%; }
+.year-controls { display: flex; align-items: center; gap: var(--anion-space-8); }
+.year-picker { width: 110px; flex-shrink: 0; }
+.season-tabs {
+  --tui-tab-margin: 0;
+  display: flex;
+  flex: 0 1 400px;
+  width: 400px;
+  max-width: 100%;
+  min-width: 0;
+  gap: var(--anion-space-4);
+}
+.season-picker [tuiTab] {
+  display: inline-flex;
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  block-size: var(--anion-space-40);
+  box-sizing: border-box;
+  font-size: var(--anion-font-size-13);
+  font-weight: var(--anion-font-weight-medium);
+  align-items: center;
+  justify-content: center;
+  gap: var(--anion-space-6);
+  padding: 0 var(--anion-space-12);
+  border-radius: var(--anion-radius-sm);
+}
+.tab-icon { font-size: var(--anion-icon-16); }
+.season-navigation { display: flex; align-items: center; gap: var(--anion-space-12); }
+.season-navigation button { color: var(--season-accent); }
+
+
+.results-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--anion-space-8);
+  margin: var(--anion-space-24) 0 var(--anion-space-16);
+}
+
+h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-8);
+  margin: 0;
+  font-size: var(--anion-font-size-18);
+  font-weight: var(--anion-font-weight-semibold);
+}
+
+.season-symbol {
+  display: inline-flex;
+  padding: var(--anion-space-6);
+  border-radius: var(--anion-radius-sm);
+  color: var(--season-accent);
+  background: var(--season-wash);
+}
+.season-symbol tui-icon { font-size: var(--anion-icon-20); }
+.results-heading p { font-size: var(--anion-font-size-12); }
+.season-grid {
+  display: grid;
+  // Preserve column width even when a season only has one or two results.
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr));
+  gap: var(--anion-space-16);
+}
+
+.season-card {
+  display: grid;
+  grid-template-columns: clamp(140px, 30%, 180px) minmax(0, 1fr);
+  min-width: 0;
+  align-items: stretch;
+  gap: var(--anion-space-16);
+  padding: var(--anion-space-12);
+  border: 1px solid var(--anion-border-subtle);
+  border-radius: var(--anion-radius-lg);
+  background: radial-gradient(ellipse at top right, var(--season-wash), transparent 65%), var(--anion-surface-1);
+  transition:
+    transform var(--anion-duration-base) var(--anion-ease),
+    border-color var(--anion-duration-base) var(--anion-ease),
+    box-shadow var(--anion-duration-base) var(--anion-ease);
+  animation: season-card-enter var(--anion-duration-slow) var(--anion-ease) backwards;
+  animation-delay: calc(var(--entry-order, 0) * var(--anion-duration-base) / 6);
+
+  &:focus-within {
+    border-color: var(--season-border);
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+.poster-wrap { position: relative; min-width: 0; align-self: start; }
+.poster-rating {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--anion-space-2);
+  padding: var(--anion-space-32) var(--anion-space-12) var(--anion-space-12);
+  border-radius: 0 0 var(--anion-radius-sm) var(--anion-radius-sm);
+  background: var(--anion-gradient-poster-shade);
+  pointer-events: none;
+}
+.poster-rating .rating { font-size: var(--anion-font-size-20); font-weight: var(--anion-font-weight-bold); }
+.poster-rating--unrated .rating { font-size: var(--anion-font-size-12); color: var(--anion-text-on-brand); font-weight: var(--anion-font-weight-medium); }
+.poster-rating .rating-votes { color: var(--anion-text-on-brand); font-size: var(--anion-font-size-10); }
+
+.poster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--anion-radius-sm);
+  background: var(--anion-bg-media);
+}
+
+.poster img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--anion-duration-slow) var(--anion-ease);
+}
+
+.card-content { min-width: 0; display: flex; flex-direction: column; gap: var(--anion-space-10); }
+.card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--anion-space-8); }
+.rating { display: inline-flex; align-items: center; gap: var(--anion-space-4); font-size: var(--anion-font-size-12); color: var(--anion-warning); }
+.rating tui-icon { font-size: var(--anion-icon-16); }
+h3 { margin: 0; font-size: var(--anion-font-size-16); font-weight: var(--anion-font-weight-semibold); line-height: var(--anion-line-height-snug); }
+h3 a { color: var(--anion-text-primary); text-decoration: none; transition: color var(--anion-duration-base) var(--anion-ease); }
+h3 a, .description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+h3 a:focus-visible { outline: var(--anion-space-2) solid var(--anion-accent-text); outline-offset: var(--anion-space-2); }
+.format, .age-label { font-size: var(--anion-font-size-11); color: var(--anion-text-secondary); }
+.age-label { margin-left: auto; }
+.anime-status {
+  --t-size: calc(var(--anion-space-24) + var(--anion-space-4));
+  --t-padding: 0 var(--anion-space-10);
+}
+.card-meta [tuiBadge][data-appearance='neutral'].anime-status--announce {
+  color: var(--anion-warning);
+  background: var(--anion-warning-pale);
+}
+.card-meta [tuiBadge][data-appearance='neutral'].anime-status--ongoing {
+  color: var(--anion-positive);
+  background: var(--anion-positive-pale);
+}
+.card-meta [tuiBadge][data-appearance='neutral'].anime-status--released {
+  color: var(--anion-accent-text);
+  background: var(--anion-accent-a15);
+}
+.genres { display: flex; flex-wrap: wrap; gap: var(--anion-space-6); }
+.genres .genre-tag {
+  min-height: calc(var(--anion-space-24) + var(--anion-space-4));
+  padding: var(--anion-space-4) var(--anion-space-10);
+  box-sizing: border-box;
+  color: var(--anion-text-secondary);
+  background: var(--anion-surface-3);
+  font-size: var(--anion-font-size-12);
+}
+.genres a.genre-tag {
+  text-decoration: none;
+  transition: color var(--anion-duration-base) var(--anion-ease), background-color var(--anion-duration-base) var(--anion-ease);
+
+  &:hover, &:focus-visible { color: var(--season-accent); background: var(--season-wash); }
+  &:focus-visible { outline: var(--anion-space-2) solid var(--season-accent); outline-offset: var(--anion-space-2); }
+}
+.description { font-size: var(--anion-font-size-13); -webkit-line-clamp: 3; }
+.card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--anion-space-8);
+  padding-top: var(--anion-space-12);
+  margin-top: auto;
+}
+.card-stats { display: flex; align-items: center; flex-wrap: wrap; gap: var(--anion-space-16); }
+.card-stats span, .next-episode { display: inline-flex; align-items: center; gap: var(--anion-space-6); }
+.card-stats, .rating-votes { color: var(--anion-text-secondary); font-size: var(--anion-font-size-12); }
+.card-stats tui-icon, .next-episode tui-icon { font-size: var(--anion-icon-16); flex-shrink: 0; }
+.rating--unrated { color: var(--anion-text-secondary); }
+.next-episode { color: var(--season-accent); font-size: var(--anion-font-size-12); }
+.bookmark-action {
+  display: flex;
+  width: calc(var(--anion-space-40) * 3 + var(--anion-space-24));
+  min-height: var(--anion-space-40);
+  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
+}
+.bookmark { color: var(--season-accent); background: var(--season-wash); }
+.bookmark-saved { display: inline-flex; align-items: center; gap: var(--anion-space-6); color: var(--season-accent); font-size: var(--anion-font-size-12); }
+.bookmark-saved tui-icon { font-size: var(--anion-icon-16); }
+.list-footer { padding: var(--anion-space-32) var(--anion-space-12); text-align: center; }
+.list-footer p { margin: var(--anion-space-10) 0; }
+.error { color: var(--anion-negative-text); }
+
+// Seasonal accents share the existing semantic palette.
+.seasons-page {
+  --season-accent: var(--anion-accent-text);
+  --season-wash: var(--anion-accent-a10);
+  --season-border: var(--anion-accent-a45);
+
+  &[data-season='spring'] {
+    --season-accent: var(--anion-positive);
+    --season-wash: var(--anion-positive-pale);
+    --season-border: var(--anion-positive-border);
+  }
+
+  &[data-season='summer'] {
+    --season-accent: var(--anion-warning);
+    --season-wash: var(--anion-warning-pale);
+    --season-border: var(--anion-warning-border);
+  }
+
+  &[data-season='fall'] {
+    --season-accent: var(--anion-negative-text);
+    --season-wash: var(--anion-negative-pale);
+    --season-border: var(--anion-negative-border);
+  }
+}
+
+.season-picker .selected-season {
+  color: var(--season-accent);
+  background: var(--season-wash);
+  box-shadow: inset 0 0 0 1px var(--season-border);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .season-card:hover {
+    transform: translateY(calc(-1 * var(--anion-space-2)));
+    border-color: var(--season-border);
+    box-shadow: var(--anion-shadow-card-hover);
+
+    .poster img { transform: scale(1.025); }
+    h3 a { color: var(--season-accent); }
+  }
+}
+
+@include bp.md {
+  .seasons-page { padding: 18px var(--anion-space-16) 36px; }
+}
+@include bp.sm {
+  .page-heading { flex-wrap: wrap; gap: var(--anion-space-12); }
+  h1 { font-size: var(--anion-font-size-24); }
+  .year-controls { width: 100%; flex-wrap: wrap; justify-content: space-between; }
+  .picker-main { flex-wrap: wrap; gap: var(--anion-space-8); width: 100%; }
+  .season-tabs { flex-basis: 400px; width: 100%; box-shadow: none; }
+  .season-picker [tuiTab] { padding: 0 var(--anion-space-8); font-size: var(--anion-font-size-13); }
+  .season-navigation { gap: var(--anion-space-8); }
+  .tab-icon { display: none; }
+  .season-card {
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+    gap: var(--anion-space-10) var(--anion-space-12);
+    padding: var(--anion-space-12);
+  }
+  // Flatten only the layout wrapper: reading order and links remain unchanged.
+  .card-content { display: contents; }
+  .poster-wrap { grid-column: 1; grid-row: 1 / 4; }
+  .card-meta { grid-column: 2; grid-row: 1; align-self: start; gap: var(--anion-space-6); }
+  .card-content h3 { grid-column: 2; grid-row: 2; font-size: var(--anion-font-size-16); }
+  .card-content h3 a { -webkit-line-clamp: 3; }
+  .genres { grid-column: 2; grid-row: 3; align-self: start; }
+  .genres .genre-tag {
+    font-size: var(--anion-font-size-12);
+    min-height: calc(var(--anion-space-24) + var(--anion-space-4));
+    white-space: normal;
+    height: auto;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .format, .age-label { font-size: var(--anion-font-size-12); }
+  .age-label { margin-left: 0; }
+  .card-meta .anime-status { font-size: var(--anion-font-size-11); }
+  .description, .next-episode, .card-footer { grid-column: 1 / -1; }
+  .description { font-size: var(--anion-font-size-14); -webkit-line-clamp: 3; }
+  .next-episode { font-size: var(--anion-font-size-13); }
+  .card-footer { margin-top: 0; padding-top: var(--anion-space-10); border-top: 1px solid var(--anion-border-subtle); }
+  .card-stats { gap: var(--anion-space-8); }
+  .bookmark { min-height: var(--anion-space-40); }
+  .bookmark-saved { padding: var(--anion-space-8) 0; }
+  .season-navigation button { min-width: var(--anion-space-40); min-height: var(--anion-space-40); }
+  .results-heading { align-items: flex-start; }
+  .results-heading > p { align-self: center; }
+  .poster-rating { padding-inline: var(--anion-space-8); }
+
+}
+
+@keyframes season-card-enter {
+  from { opacity: 0; transform: translateY(var(--anion-space-4)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .season-card, .poster img, h3 a { animation: none; transition: none; }
+  .season-card:hover, .season-card:hover .poster img { transform: none; }
+}

@@ -1,11 +1,322 @@
-:host { display: block; }
-.page { max-inline-size: var(--anion-container-max); margin-inline: auto; }
-header span { color: var(--anion-accent-text); font-size: var(--anion-font-size-12); text-transform: uppercase; }
-header h1 { margin: var(--anion-space-6) 0 var(--anion-space-20); }
-.search { display: flex; align-items: center; gap: var(--anion-space-12); margin-block-end: var(--anion-space-24); padding: var(--anion-space-12) var(--anion-space-16); border: 1px solid var(--anion-border); border-radius: var(--anion-radius-lg); background: var(--anion-bg-elevated); }
-.search input { inline-size: 100%; border: 0; background: transparent; color: inherit; font: inherit; outline: none; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--anion-space-20) var(--anion-space-12); }
-.count { color: var(--anion-text-secondary); }
-.results--loading { opacity: .6; }
-.state { grid-column: 1 / -1; display: grid; min-block-size: 160px; place-items: center; color: var(--anion-text-secondary); }
-.state--error { color: var(--anion-negative-text); }
+@use 'breakpoints' as bp;
+
+// width: 100% обязателен. Родитель (.main в ani-content) — flex-колонка, а
+// `margin: 0 auto` по поперечной оси отменяет stretch: без явной ширины блок
+// сжимается до самой длинной строки текста, и поле выходило ~450px.
+.search-hero {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--anion-space-40) var(--anion-space-20) var(--anion-space-24);
+  flex-direction: column;
+  align-items: center;
+  gap: var(--anion-space-16);
+  box-sizing: border-box;
+  text-align: center;
+
+  &--idle {
+    min-height: calc(100vh - var(--anion-header-height) - 180px);
+    justify-content: center;
+    padding-bottom: var(--anion-space-40);
+  }
+
+  @include bp.md {
+    padding: var(--anion-space-24) var(--anion-space-16) var(--anion-space-20);
+
+    &--idle {
+      min-height: calc(100vh - var(--anion-header-height) - 220px);
+    }
+  }
+}
+
+// Мягкое акцентное свечение за полем — тот же приём, что у промо-блока на главной.
+.search-hero__glow {
+  position: absolute;
+  z-index: -1;
+  top: -40px;
+  left: 50%;
+  width: min(560px, 90%);
+  height: 220px;
+  background: radial-gradient(circle, var(--anion-accent-a15), transparent 70%);
+  filter: blur(30px);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.search-hero__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--anion-space-8);
+}
+
+.search-hero__eyebrow {
+  display: inline-flex;
+  padding: var(--anion-space-4) var(--anion-space-10);
+  align-items: center;
+  gap: var(--anion-space-6);
+  border: 1px solid var(--anion-accent-a25);
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-accent-a10);
+  color: var(--anion-accent-text);
+  font-size: var(--anion-font-size-12);
+  font-weight: var(--anion-font-weight-semibold);
+
+  tui-icon {
+    width: var(--anion-icon-13);
+    height: var(--anion-icon-13);
+  }
+}
+
+.search-hero__title {
+  margin: 0;
+  color: var(--tui-text-primary);
+  font-size: var(--anion-font-size-28);
+  font-weight: var(--anion-font-weight-bold);
+  letter-spacing: var(--anion-letter-spacing-heading);
+  line-height: var(--anion-line-height-tight);
+
+  @include bp.md {
+    font-size: var(--anion-font-size-24);
+  }
+}
+
+.search-hero__subtitle {
+  max-width: 420px;
+  margin: 0;
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-14);
+  line-height: var(--anion-line-height-normal);
+}
+
+.search-hero__count {
+  display: flex;
+  min-height: 20px;
+  margin: 0;
+  align-items: center;
+  gap: var(--anion-space-6);
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+  line-height: 20px;
+
+  b {
+    color: var(--tui-text-primary);
+  }
+}
+
+// Заглушка ровно на месте числа: слово «Найдено» остаётся на экране, а строка
+// не меняет высоту, пока ответ в пути.
+.search-hero__count-skeleton {
+  display: inline-block;
+  width: 28px;
+  height: 12px;
+  border-radius: var(--anion-radius-xs);
+  background: var(--anion-gradient-skeleton);
+  background-size: 200% 100%;
+  animation: search-shimmer var(--anion-duration-shimmer) linear infinite;
+}
+
+@keyframes search-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.search-field {
+  display: flex;
+  width: 100%;
+  height: 56px;
+  padding: 0 var(--anion-space-8) 0 var(--anion-space-16);
+  align-items: center;
+  gap: var(--anion-space-12);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-2xl);
+  background: var(--anion-surface-2);
+  box-shadow: var(--anion-shadow-card);
+  box-sizing: border-box;
+  cursor: text;
+  transition: border-color var(--anion-duration-base) ease,
+    background-color var(--anion-duration-base) ease, box-shadow var(--anion-duration-base) ease;
+
+  &:hover {
+    border-color: var(--anion-border-strong);
+  }
+
+  &:focus-within {
+    border-color: var(--anion-accent-a60);
+    background: var(--anion-surface-3);
+    box-shadow: var(--anion-shadow-accent-glow);
+  }
+
+  @include bp.md {
+    height: 50px;
+    padding-left: var(--anion-space-12);
+    border-radius: var(--anion-radius-xl);
+  }
+}
+
+.search-field__icon {
+  width: var(--anion-icon-20);
+  height: var(--anion-icon-20);
+  flex: 0 0 auto;
+  color: var(--anion-text-tertiary);
+
+  .search-field--filled & {
+    color: var(--anion-accent-text);
+  }
+}
+
+.search-field__input {
+  min-width: 0;
+  flex: 1;
+  border: none;
+  background: none;
+  color: var(--tui-text-primary);
+  font: inherit;
+  font-size: var(--anion-font-size-16);
+  outline: none;
+
+  &::placeholder {
+    color: var(--anion-text-tertiary);
+  }
+
+  // Нативный крестик у type="search" дублирует нашу кнопку очистки.
+  &::-webkit-search-cancel-button {
+    appearance: none;
+  }
+}
+
+.search-field__clear {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: none;
+  border-radius: var(--anion-radius-circle);
+  background: var(--anion-surface-3);
+  color: var(--anion-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--anion-duration-base) ease, color var(--anion-duration-base) ease;
+
+  &:hover {
+    background: var(--anion-surface-5);
+    color: var(--tui-text-primary);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--anion-focus-ring);
+  }
+
+  tui-icon {
+    width: var(--anion-icon-16);
+    height: var(--anion-icon-16);
+  }
+}
+
+.search-list {
+  display: grid;
+  width: 100%;
+  max-width: var(--anion-container-max);
+  height: fit-content;
+  margin: 0 auto;
+  padding: var(--anion-space-8) var(--anion-space-20) var(--anion-space-40);
+  grid-template-columns: repeat(auto-fill, minmax(var(--anion-catalog-tile-min), 1fr));
+  align-items: stretch;
+  gap: var(--anion-space-12);
+  box-sizing: border-box;
+
+  app-catalog-tile {
+    min-width: 0;
+    height: 100%;
+  }
+
+  > .search-state {
+    grid-column: 1 / -1;
+  }
+
+  @include bp.md {
+    padding: var(--anion-space-8) var(--anion-space-16) 28px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.search-state {
+  display: flex;
+  width: 100%;
+  margin: 0 auto;
+  padding: 56px var(--anion-space-16);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--anion-space-10);
+  text-align: center;
+
+  @include bp.md {
+    padding: var(--anion-space-40) var(--anion-space-16);
+  }
+}
+
+.search-state__icon {
+  width: var(--anion-icon-40);
+  height: var(--anion-icon-40);
+  margin-bottom: var(--anion-space-4);
+  color: var(--anion-text-disabled);
+}
+
+.search-state__title {
+  color: var(--tui-text-primary);
+  font-size: var(--anion-font-size-20);
+  font-weight: var(--anion-font-weight-bold);
+
+  @include bp.md {
+    font-size: var(--anion-font-size-18);
+  }
+}
+
+.search-state__hint {
+  max-width: 340px;
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+  line-height: var(--anion-line-height-normal);
+}
+
+.search-state__spinner {
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--anion-space-12);
+  border: 3px solid var(--anion-border);
+  border-top-color: var(--anion-accent);
+  border-radius: var(--anion-radius-circle);
+  animation: search-spin 0.75s linear infinite;
+}
+
+@keyframes search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.search-more {
+  display: flex;
+  padding-bottom: var(--anion-space-40);
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-field,
+  .search-field__clear {
+    transition: none;
+  }
+
+  .search-state__spinner,
+  .search-hero__count-skeleton {
+    animation: none;
+  }
+}
+
+:host { display: block; position: relative; isolation: isolate; }
+.search-state { box-sizing: border-box; }

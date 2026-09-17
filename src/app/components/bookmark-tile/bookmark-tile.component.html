@@ -1,0 +1,195 @@
+<article class="bookmark-tile" [class.bookmark-tile--editing]="isEditing()">
+  @if (showDeleteConfirm()) {
+  <div class="confirm-overlay">
+    <div class="confirm-content">
+      <div class="confirm-content__icon">
+        <tui-icon icon="@tui.trash-2" />
+      </div>
+      <p>Удалить из закладок?</p>
+      <span>Это действие нельзя отменить</span>
+      <div class="confirm-actions">
+        <button tuiButton appearance="secondary" size="s" type="button" (click)="onCancelDelete()">
+          Отмена
+        </button>
+        <button tuiButton appearance="destructive" size="s" type="button" (click)="onConfirmDelete()">
+          Удалить
+        </button>
+      </div>
+    </div>
+  </div>
+  }
+
+  <a
+    [routerLink]="['/anime', bookmark().yumiId]"
+    class="poster-link"
+    [attr.aria-label]="'Открыть аниме «' + bookmark().title + '»'"
+  >
+    <img
+      class="poster"
+      [src]="posterUrl()"
+      [alt]="'Постер: ' + bookmark().title"
+      (error)="onPosterError()"
+    />
+    <span class="poster-shade" aria-hidden="true"></span>
+    <span
+      class="anime-status"
+      [class.anime-status--ongoing]="bookmark().animeStatus === 'ongoing'"
+      [class.anime-status--released]="bookmark().animeStatus === 'released'"
+      [class.anime-status--anons]="bookmark().animeStatus === 'anons'"
+    >
+      {{ animeStatusLabel }}
+    </span>
+    <span class="poster-progress">
+      <tui-icon icon="@tui.tv" />
+      Просмотрено: {{ episodesText }}
+    </span>
+  </a>
+
+  <div class="info">
+    <a
+      [routerLink]="['/anime', bookmark().yumiId]"
+      class="title"
+      [title]="bookmark().title"
+    >
+      {{ bookmark().title }}
+    </a>
+
+    @if (!isEditing()) {
+    <div class="progress-block">
+      <div class="progress-block__row">
+        <span>Прогресс</span>
+        <strong>{{ progressPercent }}%</strong>
+      </div>
+      <span class="progress-track" aria-hidden="true">
+        <span [style.width.%]="progressPercent"></span>
+      </span>
+    </div>
+
+    <div class="actions">
+      <button
+        tuiButton
+        appearance="flat"
+        size="xs"
+        type="button"
+        (click)="onEdit()"
+        class="action-btn"
+        aria-label="Изменить закладку"
+        title="Изменить"
+      >
+        <tui-icon icon="@tui.pencil" />
+        <span>Изменить</span>
+      </button>
+      <button
+        tuiButton
+        appearance="flat"
+        size="xs"
+        type="button"
+        (click)="onDeleteClick()"
+        class="action-btn action-btn--icon delete-btn"
+        aria-label="Удалить закладку"
+        title="Удалить"
+      >
+        <tui-icon icon="@tui.trash-2" />
+      </button>
+    </div>
+    } @else {
+    <div class="edit-form">
+      <div class="edit-field">
+        <label>Список</label>
+        <div
+          tuiDropdownAuto
+          [tuiDropdown]="statusDropdown"
+          [(tuiDropdownOpen)]="showStatusDropdown"
+        >
+          <button
+            tuiButton
+            appearance="secondary"
+            size="s"
+            type="button"
+            class="status-selector"
+            (click)="showStatusDropdown.set(!showStatusDropdown())"
+          >
+            {{ currentStatusLabel }}
+            <tui-icon icon="@tui.chevron-down" />
+          </button>
+        </div>
+
+        <ng-template #statusDropdown>
+          <tui-data-list>
+            @for (status of allStatuses(); track status.key) {
+            <button
+              tuiOption
+              type="button"
+              (click)="onSelectStatus(status.status)"
+              [class.selected]="editedStatus() === status.status"
+            >
+              <tui-icon [icon]="status.icon" />
+              {{ status.label }}
+            </button>
+            }
+          </tui-data-list>
+        </ng-template>
+      </div>
+
+      <div class="edit-field">
+        <label>Статус аниме</label>
+        <div
+          tuiDropdownAuto
+          [tuiDropdown]="animeStatusDropdown"
+          [(tuiDropdownOpen)]="showAnimeStatusDropdown"
+        >
+          <button
+            tuiButton
+            appearance="secondary"
+            size="s"
+            type="button"
+            class="status-selector"
+            (click)="showAnimeStatusDropdown.set(!showAnimeStatusDropdown())"
+          >
+            {{ currentAnimeStatusLabel }}
+            <tui-icon icon="@tui.chevron-down" />
+          </button>
+        </div>
+
+        <ng-template #animeStatusDropdown>
+          <tui-data-list>
+            @for (option of animeStatusOptions; track option.alias) {
+            <button
+              tuiOption
+              type="button"
+              (click)="onSelectAnimeStatus(option.alias)"
+              [class.selected]="editedAnimeStatus() === option.alias"
+            >
+              {{ option.label }}
+            </button>
+            }
+          </tui-data-list>
+        </ng-template>
+      </div>
+
+      <div class="edit-field">
+        <label>Просмотрено эпизодов (синхронизировано)</label>
+        <div class="episodes-counter">
+          
+          <span class="episodes-value">
+            {{ bookmark().watchedEpisodes }}
+            @if (bookmark().totalEpisodes > 0) {
+            <small>/ {{ bookmark().totalEpisodes }}</small>
+            }
+          </span>
+          
+        </div>
+      </div>
+
+      <div class="edit-actions">
+        <button tuiButton appearance="secondary" size="s" type="button" (click)="onCancelEdit()">
+          Отмена
+        </button>
+        <button tuiButton appearance="primary" size="s" type="button" (click)="onSaveEdit()">
+          Сохранить
+        </button>
+      </div>
+    </div>
+    }
+  </div>
+</article>
