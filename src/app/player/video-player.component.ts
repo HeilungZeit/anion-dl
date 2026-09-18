@@ -183,6 +183,8 @@ export class VideoPlayerComponent {
   readonly duration = signal(0);
   readonly bufferedTo = signal(0);
   readonly paused = signal(true);
+  /** Воспроизведение встало в ожидании данных: `waiting` без `playing`. */
+  readonly buffering = signal(false);
   readonly volume = signal(1);
   readonly muted = signal(false);
   readonly isFullscreen = signal(false);
@@ -497,6 +499,7 @@ export class VideoPlayerComponent {
     // Событие pause после уничтожения MediaSource уже может принести 0/0.
     this.emitPausedProgress();
     this.playbackReady = false;
+    this.buffering.set(false);
     this.destroyHls();
   }
 
@@ -583,6 +586,16 @@ export class VideoPlayerComponent {
     });
 
     return {
+      // По умолчанию hls.js держит впереди лишь 30 с: на медленном CDN этого
+      // не хватает, чтобы пережить провал скорости без остановки. Две минуты
+      // вперёд — порядка 30–60 МБ при 720p; потолок в байтах поднят с 60 МБ,
+      // иначе он обрезал бы запас раньше секунд на высоком битрейте.
+      maxBufferLength: 120,
+      maxMaxBufferLength: 180,
+      maxBufferSize: 200 * 1000 * 1000,
+      // Позади хватит минуты на перемотку назад; без предела просмотренное
+      // копилось бы в памяти до конца серии.
+      backBufferLength: 60,
       fragLoadPolicy: noRetryOn403(base.fragLoadPolicy),
       playlistLoadPolicy: noRetryOn403(base.playlistLoadPolicy),
     };
@@ -774,7 +787,16 @@ export class VideoPlayerComponent {
     }
   }
 
+  onWaiting(): void {
+    this.buffering.set(true);
+  }
+
+  onPlaying(): void {
+    this.buffering.set(false);
+  }
+
   onEnded(): void {
+    this.buffering.set(false);
     this.paused.set(true);
     this.startAutoNext();
     const video = this.videoRef()?.nativeElement;
@@ -799,6 +821,7 @@ export class VideoPlayerComponent {
   }
 
   onPause(): void {
+    this.buffering.set(false);
     this.paused.set(true);
     this.pokeControls();
     this.emitPausedProgress();

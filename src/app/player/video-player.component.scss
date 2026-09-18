@@ -172,6 +172,17 @@
   animation: spin 900ms linear infinite;
 }
 
+.buffering {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 48px;
+  block-size: 48px;
+  margin: -24px 0 0 -24px;
+  border-width: 3px;
+  pointer-events: none;
+}
+
 @keyframes spin {
   to {
     transform: rotate(1turn);
