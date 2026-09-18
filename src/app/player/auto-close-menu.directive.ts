@@ -9,8 +9,8 @@ const ACTIVE_OPTION = '.quality__option--active';
 /**
  * Поведение `<details>`-меню плеера, которого у нативного элемента нет:
  *
- * - закрывается по клику мимо, по уходу фокуса наружу (Tab) и после 5 секунд
- *   бездействия внутри — забытое меню висело бы поверх кадра;
+ * - закрывается по клику мимо, по уходу фокуса наружу клавишей Tab и после
+ *   5 секунд бездействия внутри — забытое меню висело бы поверх кадра;
  * - управляется с клавиатуры: стрелки ходят по пунктам, Esc закрывает и
  *   возвращает фокус на кнопку меню.
  *
@@ -26,7 +26,6 @@ const ACTIVE_OPTION = '.quality__option--active';
     '(pointerdown)': 'restartTimer()',
     '(wheel)': 'restartTimer()',
     '(keydown)': 'onKeydown($event)',
-    '(focusout)': 'onFocusOut($event)',
     '(document:pointerdown)': 'onDocumentPointerDown($event)',
   },
 })
@@ -86,20 +85,23 @@ export class AutoCloseMenuDirective {
       case 'End':
         this.options().at(-1)?.focus();
         break;
+      case 'Tab':
+        // Фокус переедет после обработки клавиши — проверяем уже на месте.
+        // Через focusout это делать нельзя: в WebKit клик по кнопке не даёт
+        // ей фокус, он уходит на плеер (у него tabindex), и меню закрывалось
+        // на нажатии мыши — клик приходился уже на скрытый пункт.
+        setTimeout(() => {
+          if (!this.details.contains(document.activeElement)) {
+            this.close(false);
+          }
+        });
+        return;
       default:
         return;
     }
 
     event.preventDefault();
     event.stopPropagation();
-  }
-
-  onFocusOut(event: FocusEvent): void {
-    const next = event.relatedTarget as Node | null;
-
-    if (this.details.open && next && !this.details.contains(next)) {
-      this.close(false);
-    }
   }
 
   restartTimer(): void {
