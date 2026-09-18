@@ -15,7 +15,6 @@ import type { Anime4KPipeline } from 'anime4k-webgpu';
  */
 
 /**
-/**
  * Только то, что тянет реальное время на обычной машине.
  *
  * Тяжёлые варианты (CNNx2UL, GANUUL, GANx3L) проверялись и убраны: на среднем
@@ -262,6 +261,10 @@ export async function startUpscale({
   let pipelines: Anime4KPipeline[] = [];
   let bindGroup: GPUBindGroup | null = null;
   let builtFor = '';
+  /** Канва поменяла размер с последней сборки — цель надо пересчитать. */
+  let sizeDirty = false;
+  /** Кадр, уже лежащий на канве: на паузе его незачем гнать через GPU заново. */
+  let drawnKey = '';
   let stats: UpscaleStats | null = null;
   let framesInWindow = 0;
   let windowStartedAt = performance.now();
@@ -274,23 +277,32 @@ export async function startUpscale({
     bindGroup = null;
   };
 
-  const rebuild = (width: number, height: number): void => {
-    release();
-
-    // Цель — сколько пикселей реально покажет канва, а не абстрактная доля
-    // ширины экрана. Считать от screen.width было ошибкой: при небольшом
-    // окне конвейер рисовал в текстуру заметно крупнее той, что видна, и
-    // лишние пиксели тут же выбрасывались обратной свёрткой браузера.
+  /**
+   * Цель — сколько пикселей реально покажет канва, а не абстрактная доля
+   * ширины экрана. Считать от screen.width было ошибкой: при небольшом окне
+   * конвейер рисовал в текстуру заметно крупнее той, что видна, и лишние
+   * пиксели тут же выбрасывались обратной свёрткой браузера.
+   */
+  const targetFor = (
+    width: number,
+    height: number
+  ): { width: number; height: number } => {
     const shownWidth = Math.round(
       (canvas.clientWidth || width) * (window.devicePixelRatio || 1)
     );
 
     // Меньше исходника — апскейлить нечего; больше двукратного пресеты не дают.
     const scale = Math.min(MAX_SCALE, Math.max(1, shownWidth / width));
-    const targetDimensions = {
+    return {
       width: Math.round(width * scale),
       height: Math.round(height * scale),
     };
+  };
+
+  const rebuild = (width: number, height: number): void => {
+    release();
+
+    const targetDimensions = targetFor(width, height);
 
     source = device.createTexture({
       size: [width, height],
@@ -324,7 +336,8 @@ export async function startUpscale({
       ],
     });
 
-    builtFor = `${width}x${height}`;
+    builtFor = `${width}x${height}@${targetDimensions.width}x${targetDimensions.height}`;
+    sizeDirty = false;
     stats = {
       sourceWidth: width,
       sourceHeight: height,
@@ -355,19 +368,44 @@ export async function startUpscale({
     const width = video.videoWidth;
     const height = video.videoHeight;
 
-    if (width === 0 || height === 0) {
+    // До первого декодированного кадра копировать нечего: при заходе на
+    // страницу видео стоит на паузе с одними метаданными, и канва закрывала
+    // бы постер чёрным.
+    if (
+      width === 0 ||
+      height === 0 ||
+      video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
       return;
     }
 
-    // Размер меняется при смене качества — конвейер пересобирается под него,
-    // иначе текстуры остались бы от прошлого разрешения.
-    if (builtFor !== `${width}x${height}`) {
+    // Пересборка — и при смене качества (текстуры от прошлого разрешения), и
+    // при смене размера канвы. Без второго цель навсегда оставалась той, что
+    // посчитали на первом кадре: апскейл стартует ещё в обычном окне на
+    // странице тайтла, и после разворота на весь экран конвейер продолжал
+    // рисовать маленькую картинку, которую браузер растягивал. Лечилось это
+    // только выключением и включением режима.
+    if (!builtFor.startsWith(`${width}x${height}@`)) {
       rebuild(width, height);
+    } else if (sizeDirty) {
+      const target = targetFor(width, height);
+      sizeDirty = false;
+      if (!builtFor.endsWith(`@${target.width}x${target.height}`)) {
+        rebuild(width, height);
+      }
     }
 
     if (!source || pipelines.length === 0 || !bindGroup || !stats) {
       return;
     }
+
+    // Опрос на паузе срабатывает четыре раза в секунду; тот же кадр в ту же
+    // сборку перерисовывать незачем — нужно только после перемотки.
+    const frameKey = `${builtFor}#${video.currentTime}`;
+    if (video.paused && frameKey === drawnKey) {
+      return;
+    }
+    drawnKey = frameKey;
 
     device.queue.copyExternalImageToTexture(
       { source: video },
@@ -440,11 +478,35 @@ export async function startUpscale({
     schedule();
   };
 
+  // Размер канвы меняют полноэкранный режим и ресайз окна. Пересборка
+  // откладывается, пока размер не устоится: анимация разворота дала бы
+  // десятки сборок конвейера подряд.
+  let resizeHandle: ReturnType<typeof setTimeout> | null = null;
+  const resizeObserver = new ResizeObserver(() => {
+    if (resizeHandle !== null) {
+      clearTimeout(resizeHandle);
+    }
+
+    resizeHandle = setTimeout(() => {
+      resizeHandle = null;
+      sizeDirty = true;
+      // На паузе новый кадр не придёт — перерисовываем под новый размер сразу.
+      drawnKey = '';
+    }, 200);
+  });
+  resizeObserver.observe(canvas);
+
   step();
 
   return {
     destroy(): void {
       disposed = true;
+      resizeObserver.disconnect();
+
+      if (resizeHandle !== null) {
+        clearTimeout(resizeHandle);
+        resizeHandle = null;
+      }
 
       if (frameHandle !== null) {
         video.cancelVideoFrameCallback(frameHandle);
