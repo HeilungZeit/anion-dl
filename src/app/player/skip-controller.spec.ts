@@ -36,7 +36,7 @@ describe('опенинг', () => {
 });
 
 describe('концовка', () => {
-  test('тайминг концовки внутри последних четырёх минут не мешает', () => {
+  test('тайминг концовки внутри последних двух минут не мешает', () => {
     const skip = new SkipController(SKIPS);
     expect(skip.visibleSkip(SKIPS.ending, DURATION)?.kind).toBe('ending');
     expect(skip.visibleSkip(DURATION - 1, DURATION)?.kind).toBe('ending');
@@ -47,8 +47,8 @@ describe('концовка', () => {
     const duration = 24 * 60;
 
     expect(skip.visibleSkip(12 * 60, duration)).toBeNull();
-    expect(skip.visibleSkip(14 * 60, duration)).toBeNull();
-    expect(skip.visibleSkip(20 * 60, duration)?.kind).toBe('ending');
+    expect(skip.visibleSkip(21 * 60, duration)).toBeNull();
+    expect(skip.visibleSkip(22 * 60, duration)?.kind).toBe('ending');
   });
 
   test('у последней серии не показывается: вести некуда', () => {
@@ -69,12 +69,12 @@ describe('концовка', () => {
     expect(skip.visibleSkip(tailStart, DURATION)?.kind).toBe('ending');
   });
 
-  test('кнопка следующей серии появляется за четыре минуты до конца', () => {
+  test('кнопка следующей серии появляется за две минуты до конца', () => {
     const skip = new SkipController({});
 
-    expect(TAIL_SECONDS).toBe(240);
-    expect(skip.visibleSkip(DURATION - 241, DURATION)).toBeNull();
-    expect(skip.visibleSkip(DURATION - 240, DURATION)?.kind).toBe('ending');
+    expect(TAIL_SECONDS).toBe(120);
+    expect(skip.visibleSkip(DURATION - 121, DURATION)).toBeNull();
+    expect(skip.visibleSkip(DURATION - 120, DURATION)?.kind).toBe('ending');
   });
 
   test('без известной длительности хвоста нет', () => {

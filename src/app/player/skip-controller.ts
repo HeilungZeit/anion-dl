@@ -16,7 +16,7 @@ import type { VideoSkips } from '../api/anime.types';
 export const DEFAULT_WINDOW_SECONDS = 90;
 
 /** Хвост серии, в котором кнопка следующей серии видна всегда. */
-export const TAIL_SECONDS = 4 * 60;
+export const TAIL_SECONDS = 2 * 60;
 
 export interface Segment {
   startSeconds: number;
@@ -82,7 +82,7 @@ export class SkipController {
         };
       }
 
-      // При известной длительности это строго хвост в четыре минуты. Поле
+      // При известной длительности это строго хвост в две минуты. Поле
       // skips.ending у API встречается заметно раньше настоящей концовки и не
       // должно преждевременно показывать переход на следующую серию.
       return null;
