@@ -99,7 +99,22 @@
       </button>
     }
 
-    @if (autoNextSecs(); as secs) {
+    @if (resumeOffer(); as secs) {
+      <div class="autonext" role="status">
+        <span class="autonext__text">
+          Вы остановились на <strong>{{ formatTime(secs) }}</strong>
+        </span>
+        <span class="autonext__actions">
+          <button class="ghost ghost--outlined" type="button" (click)="startOver()">
+            Сначала
+          </button>
+          <button class="autonext__go" type="button" (click)="resumePlayback()">
+            Продолжить
+            <tui-icon icon="@tui.play" />
+          </button>
+        </span>
+      </div>
+    } @else if (autoNextSecs(); as secs) {
       <div class="autonext" role="status">
         <span class="autonext__text">
           Следующая серия через <strong>{{ secs }}</strong>

@@ -17,7 +17,7 @@
               <span class="section__accent" aria-hidden="true"></span>
               <div>
                 <h1>Продолжить смотреть</h1>
-                <p>Недавние серии с сохранённой позицией</p>
+                <p>Где остановились в недавних тайтлах</p>
               </div>
             </div>
           </header>
@@ -43,7 +43,11 @@
                     Серия {{ record.episode }} · {{ record.dubbing }}
                   </span>
                   <span class="continue-card__position">
-                    Продолжить с {{ formatPosition(record.positionSecs) }}
+                    @if (record.upNext) {
+                      Следующая серия
+                    } @else {
+                      Продолжить с {{ formatPosition(record.positionSecs) }}
+                    }
                   </span>
                   <span class="continue-card__progress" aria-hidden="true">
                     <span

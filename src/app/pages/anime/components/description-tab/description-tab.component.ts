@@ -24,7 +24,10 @@ import {
   RemoteWatchProgressService,
 } from '../../../../api/remote-watch-progress.service';
 import { UserService } from '../../../../api/user.service';
-import { WatchProgressService } from '../../../../api/watch-progress.service';
+import {
+  resumeEpisodeFor,
+  WatchProgressService,
+} from '../../../../api/watch-progress.service';
 import {
   type PlaybackProgress,
   VideoPlayerComponent,
@@ -213,6 +216,8 @@ export class DescriptionTabComponent {
   private readonly stripRef = viewChild<ElementRef<HTMLElement>>('strip');
   private appliedRequestedEpisode: number | undefined;
   private appliedRemoteDefault = false;
+  /** Серия из локальной истории; undefined — история ещё не прочитана. */
+  private localDefault: number | null | undefined;
   private selectionWasExplicit = false;
 
   constructor() {
@@ -242,6 +247,7 @@ export class DescriptionTabComponent {
       const list = this.episodes();
       const requested = this.requestedEpisode();
       const watched = this.watched();
+      const progressReady = this.progressInitialized();
 
       untracked(() => {
         if (list.length === 0) {
@@ -267,25 +273,35 @@ export class DescriptionTabComponent {
           }
         }
 
-        // При обычном открытии тайтла серверный прогресс приезжает позже
-        // списка серий. Один раз переставляем выбор на последнюю просмотренную,
-        // но не перебиваем параметр из URL или уже сделанный человеком выбор.
+        // При обычном открытии тайтла выбираем, где человек остановился.
+        // Локальная история точнее — в ней позиция и досмотренность, — но
+        // серверный прогресс общий с другими устройствами и приезжает позже
+        // списка серий. Побеждает бо́льший номер: если там ушли дальше,
+        // возвращать на старую серию незачем. Выбор человека не перебиваем.
         if (!this.appliedRemoteDefault && !this.selectionWasExplicit) {
-          const latest = latestAvailableWatchedEpisode(
-            list.map((video) => Number(video.number)),
-            watched
+          const numbers = list.map((video) => Number(video.number));
+
+          if (this.localDefault === undefined && progressReady) {
+            this.localDefault = resumeEpisodeFor(
+              this.localProgress.records(),
+              this.anime().animeId,
+              numbers
+            );
+          }
+
+          const remote = latestAvailableWatchedEpisode(numbers, watched);
+          if (remote !== null) {
+            this.appliedRemoteDefault = true;
+          }
+
+          const target = Math.max(this.localDefault ?? 0, remote ?? 0);
+          const fromHistory = list.find(
+            (video) => Number(video.number) === target
           );
 
-          if (latest !== null) {
-            const fromRemote = list.find(
-              (video) => Number(video.number) === latest
-            );
-
-            if (fromRemote) {
-              this.appliedRemoteDefault = true;
-              this.selectedEpisode.set(fromRemote);
-              return;
-            }
+          if (fromHistory) {
+            this.selectedEpisode.set(fromHistory);
+            return;
           }
         }
 
@@ -348,6 +364,7 @@ export class DescriptionTabComponent {
       dubbing: episode.data.dubbing,
       positionSecs: progress.positionSecs,
       durationSecs: progress.durationSecs,
+      lastEpisode: this.isLastOfDubbing(episode),
     });
   }
 
@@ -436,6 +453,17 @@ export class DescriptionTabComponent {
 
     strip.scrollLeft += event.deltaY;
     event.preventDefault();
+  }
+
+  /** Последняя вышедшая серия в своей озвучке — не обязательно в выбранной. */
+  private isLastOfDubbing(episode: Video): boolean {
+    const number = Number(episode.number);
+
+    return !this.videos().some(
+      (video) =>
+        video.data.dubbing === episode.data.dubbing &&
+        Number(video.number) > number
+    );
   }
 
   private revealSelected(): void {

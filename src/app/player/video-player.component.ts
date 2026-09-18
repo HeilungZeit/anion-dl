@@ -193,6 +193,13 @@ export class VideoPlayerComponent {
   /** Играет ли сейчас файл с диска: у него нет ни качества, ни подписи. */
   readonly isLocal = signal(false);
 
+  /**
+   * Сохранённая позиция, с которой серия откроется. Пока воспроизведение не
+   * началось, плеер предлагает продолжить или начать сначала; null — нечего
+   * предлагать.
+   */
+  readonly resumeOffer = signal<number | null>(null);
+
   /** Обратный отсчёт до следующей серии; null — отсчёта нет. */
   readonly autoNextSecs = signal<number | null>(null);
 
@@ -360,18 +367,15 @@ export class VideoPlayerComponent {
 
       untracked(() => {
         const localPath = this.localPath();
+        const startSecs = this.startPositionSecs();
         this.cancelAutoNext();
         this.playedOnce.set(false);
+        this.resumeOffer.set(startSecs > 0 ? startSecs : null);
         this.skipController = new SkipController(
           this.skips(),
           this.isLastEpisode()
         );
-        void this.load(
-          url,
-          this.requestedQuality(),
-          this.startPositionSecs(),
-          localPath
-        );
+        void this.load(url, this.requestedQuality(), startSecs, localPath);
       });
     });
 
@@ -813,6 +817,7 @@ export class VideoPlayerComponent {
   onPlay(): void {
     this.paused.set(false);
     this.playedOnce.set(true);
+    this.resumeOffer.set(null);
     this.pokeControls();
 
     if (this.playbackIframeUrl) {
@@ -881,6 +886,18 @@ export class VideoPlayerComponent {
     } else {
       video.pause();
     }
+  }
+
+  /** Позиция уже выставлена при готовности потока — осталось запустить. */
+  resumePlayback(): void {
+    this.resumeOffer.set(null);
+    this.togglePlay();
+  }
+
+  startOver(): void {
+    this.resumeOffer.set(null);
+    this.seekTo(0);
+    this.togglePlay();
   }
 
   async changeUpscale(mode: UpscaleMode): Promise<void> {

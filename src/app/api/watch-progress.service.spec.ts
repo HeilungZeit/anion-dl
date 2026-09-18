@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Poster } from './anime.types';
 import {
   mergeWatchProgress,
+  resumeEpisodeFor,
   resumePositionFor,
   selectContinueWatching,
   trimWatchRecords,
@@ -99,18 +100,74 @@ describe('watch progress policy', () => {
     expect(result).toEqual([]);
   });
 
-  test('continue watching keeps the freshest unfinished episode per anime', () => {
+  test('continue watching keeps the freshest episode per anime', () => {
     const result = selectContinueWatching([
       record({ episode: 1, updatedAt: 10 }),
       record({ episode: 2, updatedAt: 20 }),
       record({ animeId: 2, updatedAt: 15 }),
-      record({ animeId: 3, updatedAt: 30, finished: true }),
     ]);
 
     expect(result.map(({ animeId, episode }) => [animeId, episode])).toEqual([
       [1, 2],
       [2, 1],
     ]);
+  });
+
+  test('a finished latest episode offers the next one', () => {
+    const result = selectContinueWatching([
+      record({ episode: 3, updatedAt: 10 }),
+      record({ episode: 4, dubbing: 'Other', finished: true, updatedAt: 20 }),
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      episode: 5,
+      dubbing: 'Other',
+      positionSecs: 0,
+      upNext: true,
+    });
+  });
+
+  test('a finished last episode drops the title', () => {
+    const result = selectContinueWatching([
+      record({ episode: 11, updatedAt: 10 }),
+      record({ episode: 12, finished: true, lastEpisode: true, updatedAt: 20 }),
+    ]);
+
+    expect(result).toEqual([]);
+  });
+
+  test('last episode flag survives updates without it', () => {
+    const saved = mergeWatchProgress([], { ...update, lastEpisode: true }, 1);
+    const result = mergeWatchProgress(saved, { ...update, positionSecs: 60 }, 2);
+
+    expect(result[0]?.lastEpisode).toBe(true);
+  });
+
+  test('fresh titles push the oldest out of the full row', () => {
+    const records = Array.from({ length: 10 }, (_, index) =>
+      record({ animeId: index + 1, updatedAt: index + 1 })
+    );
+    const result = selectContinueWatching([
+      ...records,
+      record({ animeId: 99, finished: true, updatedAt: 100 }),
+    ]);
+
+    expect(result).toHaveLength(10);
+    expect(result[0]?.animeId).toBe(99);
+    expect(result.some(({ animeId }) => animeId === 1)).toBe(false);
+  });
+
+  test('resume episode is the unfinished one or the next after finished', () => {
+    expect(resumeEpisodeFor([record({ episode: 3 })], 1, [1, 2, 3, 4])).toBe(3);
+    expect(
+      resumeEpisodeFor([record({ episode: 3, finished: true })], 1, [1, 2, 3, 4])
+    ).toBe(4);
+    expect(
+      resumeEpisodeFor([record({ episode: 4, finished: true })], 1, [1, 2, 3, 4])
+    ).toBe(4);
+    expect(resumeEpisodeFor([record({ episode: 7 })], 1, [1, 2])).toBeNull();
+    expect(resumeEpisodeFor([], 1, [1, 2])).toBeNull();
   });
 
   test('legacy zero position remains visible instead of disappearing', () => {

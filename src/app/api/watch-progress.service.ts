@@ -21,6 +21,21 @@ export interface WatchRecord {
   durationSecs: number;
   finished: boolean;
   updatedAt: number;
+  /**
+   * Серия последняя из вышедших в своей озвучке. Досмотренная последняя серия
+   * убирает тайтл из «Продолжить смотреть»: предлагать дальше нечего. Плеер
+   * скачанных серий полного списка не знает и поле не заполняет.
+   */
+  lastEpisode?: boolean;
+}
+
+/** Карточка ряда «Продолжить смотреть». */
+export interface ContinueWatchingItem extends WatchRecord {
+  /**
+   * Последняя серия досмотрена, карточка ведёт на следующую с начала:
+   * `episode` уже увеличен, `positionSecs` обнулена.
+   */
+  upNext: boolean;
 }
 
 export type WatchProgressUpdate = Omit<
@@ -30,6 +45,10 @@ export type WatchProgressUpdate = Omit<
 
 type StoredWatchProgressUpdate = WatchProgressUpdate &
   Partial<Pick<WatchRecord, 'finished'>>;
+
+function byFreshness(left: WatchRecord, right: WatchRecord): number {
+  return right.updatedAt - left.updatedAt;
+}
 
 function sameEpisode(
   record: WatchRecord,
@@ -83,8 +102,10 @@ export function mergeWatchProgress(
     (update.finished ?? false) ||
     (durationSecs > 0 && positionSecs / durationSecs >= FINISHED_FRACTION);
 
+  const lastEpisode = update.lastEpisode ?? previous?.lastEpisode;
   const next: WatchRecord = {
     ...update,
+    ...(lastEpisode === undefined ? {} : { lastEpisode }),
     positionSecs,
     durationSecs,
     finished,
@@ -110,31 +131,47 @@ export function trimWatchRecords(
   const retentionOrder = [...records].sort(
     (left, right) =>
       Number(left.finished) - Number(right.finished) ||
-      right.updatedAt - left.updatedAt
+      byFreshness(left, right)
   );
 
   return retentionOrder.slice(0, limit);
 }
 
-/** По одной самой свежей незавершённой записи на тайтл. */
+/**
+ * По одной карточке на тайтл — по его самой свежей записи, в любой озвучке.
+ *
+ * Досмотренная серия тайтл не прячет: иначе только что досмотренный тайтл
+ * пропадал из ряда, а на его месте висела давно брошенная серия. Вместо неё
+ * предлагается следующая — кроме случая, когда досмотрена последняя.
+ */
 export function selectContinueWatching(
   records: readonly WatchRecord[],
   limit = MAX_CONTINUE_WATCHING
-): WatchRecord[] {
-  const result: WatchRecord[] = [];
+): ContinueWatchingItem[] {
+  const result: ContinueWatchingItem[] = [];
   const animeIds = new Set<number>();
 
-  for (const record of [...records].sort(
-    (left, right) => right.updatedAt - left.updatedAt
-  )) {
-    if (
-      record.finished || animeIds.has(record.animeId)
-    ) {
+  for (const record of [...records].sort(byFreshness)) {
+    if (animeIds.has(record.animeId)) {
       continue;
     }
 
     animeIds.add(record.animeId);
-    result.push(record);
+
+    if (record.finished && record.lastEpisode) {
+      continue;
+    }
+
+    result.push(
+      record.finished
+        ? {
+            ...record,
+            episode: record.episode + 1,
+            positionSecs: 0,
+            upNext: true,
+          }
+        : { ...record, upNext: false }
+    );
 
     if (result.length >= limit) {
       break;
@@ -142,6 +179,48 @@ export function selectContinueWatching(
   }
 
   return result;
+}
+
+/**
+ * Серия, с которой открыть тайтл без явного выбора: где остановился, а если
+ * она досмотрена — следующая. Номер берётся только из доступных в озвучке.
+ */
+export function resumeEpisodeFor(
+  records: readonly WatchRecord[],
+  animeId: number,
+  availableEpisodes: readonly number[]
+): number | null {
+  const latest = latestRecordFor(records, animeId);
+  if (!latest) {
+    return null;
+  }
+
+  const available = new Set(availableEpisodes);
+
+  if (latest.finished && available.has(latest.episode + 1)) {
+    return latest.episode + 1;
+  }
+
+  return available.has(latest.episode) ? latest.episode : null;
+}
+
+/** Самая свежая запись тайтла в любой озвучке. */
+export function latestRecordFor(
+  records: readonly WatchRecord[],
+  animeId: number
+): WatchRecord | null {
+  let latest: WatchRecord | null = null;
+
+  for (const record of records) {
+    if (
+      record.animeId === animeId &&
+      (latest === null || record.updatedAt > latest.updatedAt)
+    ) {
+      latest = record;
+    }
+  }
+
+  return latest;
 }
 
 export function resumePositionFor(

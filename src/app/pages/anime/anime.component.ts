@@ -7,6 +7,7 @@ import {
   input,
   resource,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { TuiLoader } from '@taiga-ui/core';
@@ -14,6 +15,10 @@ import { TuiTabs } from '@taiga-ui/kit';
 
 import { AnimeService } from '../../api/anime.service';
 import type { Video } from '../../api/anime.types';
+import {
+  latestRecordFor,
+  WatchProgressService,
+} from '../../api/watch-progress.service';
 import { LoadErrorComponent } from '../../components/load-error/load-error.component';
 import { AnimeHeaderComponent } from './components/anime-header/anime-header.component';
 import { DescriptionTabComponent } from './components/description-tab/description-tab.component';
@@ -50,6 +55,7 @@ const KODIK_PLAYER = 'Kodik';
 })
 export class AnimeComponent {
   private readonly api = inject(AnimeService);
+  private readonly localProgress = inject(WatchProgressService);
   private readonly watchTab = viewChild(DescriptionTabComponent);
 
   readonly id = input.required<string>();
@@ -105,15 +111,26 @@ export class AnimeComponent {
   }
 
   constructor() {
-    // Первая доступная озвучка выбирается сама — иначе список серий пуст,
-    // и страница выглядит сломанной, хотя данные пришли.
+    // Озвучка выбирается сама — иначе список серий пуст, и страница выглядит
+    // сломанной, хотя данные пришли. Порядок: из адреса, та, в которой тайтл
+    // смотрели последней, первая доступная. Без локальной истории выбор
+    // случился бы до её чтения и вёл бы не туда, поэтому её ждём.
     effect(() => {
       const available = this.dubbings();
+      if (!this.localProgress.isInitialized()) {
+        return;
+      }
 
       const requested = this.dubbing();
-      const preferred = requested && available.includes(requested)
-        ? requested
-        : available[0];
+      const lastWatched = untracked(() => {
+        const animeId = this.anime.value()?.animeId;
+        return animeId === undefined
+          ? undefined
+          : latestRecordFor(this.localProgress.records(), animeId)?.dubbing;
+      });
+      const preferred = [requested, lastWatched].find(
+        (name) => name !== undefined && available.includes(name)
+      ) ?? available[0];
 
       if (preferred && !available.includes(this.selectedDubbing())) {
         this.selectedDubbing.set(preferred);
