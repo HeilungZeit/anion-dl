@@ -19,6 +19,7 @@ import {
 import { AnimeService } from '../../api/anime.service';
 import type { Anime, AnimeQuery } from '../../api/anime.types';
 import { AnimeCardComponent } from '../../components/anime-card/anime-card.component';
+import { LoadErrorComponent } from '../../components/load-error/load-error.component';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 400;
@@ -69,6 +70,7 @@ const DEFAULT_SORT = SORT_OPTIONS[0] as CatalogOption;
   imports: [
     AnimeCardComponent,
     FormsModule,
+    LoadErrorComponent,
     TuiChevron,
     TuiDataListWrapper,
     TuiIcon,

@@ -44,7 +44,7 @@
             class="comment__avatar"
             alt=""
             loading="lazy"
-            [src]="comment.avatars.small"
+            [src]="avatar(comment)"
           />
 
           <div class="comment__body">
@@ -107,7 +107,7 @@
                       class="comment__avatar"
                       alt=""
                       loading="lazy"
-                      [src]="reply.avatars.small"
+                      [src]="avatar(reply)"
                     />
                     <div class="comment__body">
                       <div class="comment__meta">

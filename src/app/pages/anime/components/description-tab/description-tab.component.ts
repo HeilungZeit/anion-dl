@@ -18,6 +18,7 @@ import { TuiDataList, TuiTextfield } from '@taiga-ui/core';
 import { TuiChevron, TuiSelect } from '@taiga-ui/kit';
 
 import type { Anime, Video } from '../../../../api/anime.types';
+import { DownloadService } from '../../../../api/download.service';
 import {
   latestAvailableWatchedEpisode,
   RemoteWatchProgressService,
@@ -28,6 +29,7 @@ import {
   type PlaybackProgress,
   VideoPlayerComponent,
 } from '../../../../player/video-player.component';
+import { orderPreviewFrames } from '../../../../player/preview-frames';
 import { CommentsComponent } from '../comments/comments.component';
 
 /** Субтитры и озвучки бэк отдаёт вперемешку, различаются только подписью. */
@@ -61,7 +63,51 @@ export class DescriptionTabComponent {
   private readonly localProgress = inject(WatchProgressService);
   private readonly remoteProgress = inject(RemoteWatchProgressService);
   private readonly users = inject(UserService);
+  private readonly downloads = inject(DownloadService);
   readonly progressInitialized = this.localProgress.isInitialized;
+
+  /**
+   * Скачанные серии этого тайтла: videoId -> путь. Такая серия играет с диска.
+   * Пока сверка не прошла, плеер не монтируется: иначе он начал бы резолвить
+   * поток Kodik, а через миг выяснилось бы, что файл лежит рядом.
+   */
+  private readonly onDisk = signal<ReadonlyMap<number, string>>(new Map());
+  private readonly diskChecked = signal(false);
+  readonly playerReady = computed(
+    () => this.progressInitialized() && this.diskChecked()
+  );
+
+  readonly localPath = computed(() => {
+    const episode = this.selectedEpisode();
+    return episode ? (this.onDisk().get(episode.videoId) ?? null) : null;
+  });
+
+  /**
+   * Недосмотренные серии текущей озвучки: номер -> процент. Полоса на плитке
+   * показывает, где остановился, — галочка есть только у досмотренных.
+   */
+  readonly partialProgress = computed(() => {
+    const animeId = this.anime().animeId;
+    const dubbing = this.dubbing();
+    const result = new Map<number, number>();
+
+    for (const record of this.localProgress.records()) {
+      if (
+        record.animeId === animeId &&
+        record.dubbing === dubbing &&
+        !record.finished &&
+        record.positionSecs > 0 &&
+        record.durationSecs > 0
+      ) {
+        result.set(
+          record.episode,
+          Math.min((record.positionSecs / record.durationSecs) * 100, 100)
+        );
+      }
+    }
+
+    return result;
+  });
 
   readonly anime = input.required<Anime>();
   /** Все серии Kodik: нужны, чтобы считать эпизоды по каждой озвучке. */
@@ -139,6 +185,14 @@ export class DescriptionTabComponent {
    * чёрных полей. Кадр из серии — уже нужных пропорций, поэтому берём его, а
    * постер оставляем запасным вариантом.
    */
+  /** Кадры для заставки плеера: выбранной серии — первыми. */
+  readonly frames = computed(() =>
+    orderPreviewFrames(
+      this.anime().randomScreenshots,
+      this.selectedEpisode()?.number ?? null
+    )
+  );
+
   readonly preview = computed(
     () =>
       this.anime().randomScreenshots?.[0]?.sizes.full ?? this.anime().poster.big
@@ -162,8 +216,8 @@ export class DescriptionTabComponent {
   private selectionWasExplicit = false;
 
   constructor() {
-    // Только чтение серверных отметок. Локальную позицию сюда не переносим и
-    // отсутствие записи на бэке локальными данными не подменяем.
+    // Серверные отметки читаются отдельно от локальной позиции: её сюда не
+    // переносим и отсутствие записи на бэке локальными данными не подменяем.
     effect(() => {
       const initialized = this.users.isInitialized();
       const userId = this.users.user()?.id;
@@ -244,6 +298,24 @@ export class DescriptionTabComponent {
       });
     });
 
+    // Сверка с диском по всем озвучкам сразу, чтобы смена озвучки не ждала
+    // новой. Повторяется, когда очередь закончила серию — число в работе
+    // меняется; на сами задачи не подписываемся, они тикают от прогресса.
+    effect(() => {
+      const title = this.anime().title;
+      const videos = this.videos();
+      this.downloads.pending().length;
+
+      untracked(() => {
+        void this.downloads
+          .findDownloaded(title, [...videos])
+          .then((found) => this.onDisk.set(found))
+          // Папка загрузок не выбрана — играть с диска нечего, это не ошибка.
+          .catch(() => this.onDisk.set(new Map()))
+          .finally(() => this.diskChecked.set(true));
+      });
+    });
+
     // Лента прокручивается вбок, и у длинного сезона текущая серия оказывается
     // за краем — особенно после перехода на следующую.
     effect(() => {
@@ -255,6 +327,8 @@ export class DescriptionTabComponent {
 
     inject(DestroyRef).onDestroy(() => {
       void this.localProgress.flush().catch(() => undefined);
+      // Уход со страницы не должен ждать дебаунса отметок.
+      void this.remoteProgress.flush();
     });
   }
 
@@ -282,6 +356,26 @@ export class DescriptionTabComponent {
     void this.localProgress.flush().catch(() => undefined);
   }
 
+  /**
+   * Серия засчитывается на сервере, как только её начали смотреть — то же
+   * правило, что на фронте. Там признак старта — клик по чужому iframe, здесь
+   * честное событие `play`. Гостю отмечать некуда: серверный прогресс только
+   * у аккаунта.
+   */
+  markWatched(iframeUrl: string): void {
+    const userId = this.users.user()?.id;
+    const episode = this.videos().find((video) => video.iframeUrl === iframeUrl);
+    if (userId === undefined || !episode) {
+      return;
+    }
+
+    this.remoteProgress.markWatched(
+      this.anime().animeId,
+      userId,
+      Number(episode.number)
+    );
+  }
+
   markEnded(progress: PlaybackProgress): void {
     this.saveAndFlush({
       iframeUrl: progress.iframeUrl,
@@ -303,6 +397,10 @@ export class DescriptionTabComponent {
 
   isSelected(episode: Video): boolean {
     return this.selectedEpisode()?.videoId === episode.videoId;
+  }
+
+  progressOf(episode: Video): number | null {
+    return this.partialProgress().get(Number(episode.number)) ?? null;
   }
 
   isWatched(episode: Video): boolean {

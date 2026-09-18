@@ -1,7 +1,12 @@
 @if (feed.isLoading()) {
   <tui-loader size="l" />
 } @else if (feed.error()) {
-  <p class="error">Не удалось загрузить фид: {{ feed.error()?.message }}</p>
+  <app-load-error
+    title="Не удалось загрузить главную"
+    [message]="feed.error()?.message"
+    [offlineHint]="true"
+    (retry)="feed.reload()"
+  />
 } @else if (feed.value(); as data) {
   <div class="page">
     @if (watchProgress.continueWatching(); as records) {

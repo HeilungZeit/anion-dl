@@ -5,7 +5,10 @@
 //! упрётся в пустоту; и наоборот, `clearFinished` убирает задачу, оставляя файл,
 //! после чего серия молча качается заново.
 
+use std::path::Path;
+
 use serde::Serialize;
+use tauri::Manager;
 
 /// Состояние одного пути. Путь возвращается обратно, потому что вызывающая
 /// сторона сопоставляет ответ со своими задачами именно по нему.
@@ -43,9 +46,49 @@ fn probe(path: String) -> FileState {
     }
 }
 
+/// Открывает asset-протоколу доступ к одной скачанной серии, чтобы встроенный
+/// плеер мог её проиграть.
+///
+/// Статическая область в `tauri.conf.json` здесь не подходит: папку загрузок
+/// выбирает пользователь, и это может быть что угодно, вплоть до внешнего
+/// диска. Разрешать `**` ради этого — значит дать вебвью читать весь диск,
+/// поэтому доступ выдаётся точечно, на файл и только на видео.
+#[tauri::command]
+pub fn allow_playback(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let file = Path::new(&path);
+
+    if !is_playable(file) {
+        return Err("Встроенный плеер открывает только mp4".into());
+    }
+
+    if !file.is_file() {
+        return Err("Файл не найден — возможно, его удалили или переместили".into());
+    }
+
+    app.asset_protocol_scope()
+        .allow_file(file)
+        .map_err(|error| error.to_string())
+}
+
+fn is_playable(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("mp4"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::probe_files;
+    use std::path::Path;
+
+    use super::{is_playable, probe_files};
+
+    #[test]
+    fn plays_only_mp4() {
+        assert!(is_playable(Path::new("/tmp/Серия - E01 [Озвучка].mp4")));
+        assert!(is_playable(Path::new("/tmp/a.MP4")));
+        assert!(!is_playable(Path::new("/etc/passwd")));
+        assert!(!is_playable(Path::new("/tmp/a.mp4.json")));
+    }
 
     #[test]
     fn reports_existing_file_with_size() {

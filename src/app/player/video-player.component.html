@@ -11,15 +11,58 @@
     #video
     class="player__video"
     playsinline
-    [poster]="poster()"
-    (click)="togglePlay()"
+    [poster]="frames().length > 0 ? '' : poster()"
+    (click)="onVideoClick()"
+    (dblclick)="onVideoDoubleClick()"
     (ended)="onEnded()"
+    (error)="onVideoError()"
     (loadedmetadata)="onMetadata()"
     (pause)="onPause()"
-    (play)="paused.set(false); pokeControls()"
+    (play)="onPlay()"
     (timeupdate)="onTimeUpdate()"
     (volumechange)="onVolumeChange()"
   ></video>
+
+  <canvas
+    class="player__canvas"
+    #canvas
+    aria-hidden="true"
+    [class.player__canvas--on]="upscaleActive()"
+  ></canvas>
+
+  @if (showFrames()) {
+    <div class="frames" aria-hidden="true">
+      @for (frame of mountedFrames(); track frame.url) {
+        <img
+          class="frames__image"
+          alt=""
+          decoding="async"
+          [class.frames__image--current]="
+            frame.index === frameIndex() % visibleFrames().length
+          "
+          [src]="frame.url"
+          (error)="onFrameError(frame.url)"
+        />
+      }
+    </div>
+
+    @if (visibleFrames().length > 1 && status() !== 'error') {
+      <div class="frames__dots">
+        @for (frame of visibleFrames(); track frame; let index = $index) {
+          <button
+            class="frames__dot"
+            type="button"
+            [attr.aria-label]="'Кадр ' + (index + 1) + ' из ' + visibleFrames().length"
+            [attr.aria-current]="index === frameIndex() % visibleFrames().length ? 'true' : null"
+            [class.frames__dot--current]="
+              index === frameIndex() % visibleFrames().length
+            "
+            (click)="showFrame(index)"
+          ></button>
+        }
+      </div>
+    }
+  }
 
   @if (status() === 'resolving') {
     <div class="overlay">
@@ -46,7 +89,22 @@
       </button>
     }
 
-    @if (skipHint(); as hint) {
+    @if (autoNextSecs(); as secs) {
+      <div class="autonext" role="status">
+        <span class="autonext__text">
+          Следующая серия через <strong>{{ secs }}</strong>
+        </span>
+        <span class="autonext__actions">
+          <button class="ghost ghost--outlined" type="button" (click)="cancelAutoNext()">
+            Отмена
+          </button>
+          <button class="autonext__go" type="button" (click)="goNext()">
+            Смотреть
+            <tui-icon icon="@tui.chevrons-right" />
+          </button>
+        </span>
+      </div>
+    } @else if (skipHint(); as hint) {
       <button class="skip" type="button" (click)="applySkip(hint)">
         {{ hint.kind === 'opening' ? 'Пропустить опенинг' : 'Следующая серия' }}
         <tui-icon icon="@tui.chevrons-right" />
@@ -64,9 +122,16 @@
         [attr.aria-valuenow]="position()"
         (pointercancel)="scrubEnd($event, seek)"
         (pointerdown)="scrubStart($event, seek)"
-        (pointermove)="scrubMove($event, seek)"
+        (pointerleave)="clearHover()"
+        (pointermove)="scrubMove($event, seek); hoverSeek($event, seek)"
         (pointerup)="scrubEnd($event, seek)"
       >
+        @if (hoverSecs(); as secs) {
+          <span class="seek__tip" [style.left.%]="hoverPercent()">
+            {{ formatTime(secs) }}
+          </span>
+        }
+
         <span class="seek__track"></span>
         <span
           class="seek__buffer"
@@ -83,6 +148,7 @@
           class="ghost ghost--icon"
           type="button"
           [attr.aria-label]="paused() ? 'Воспроизвести' : 'Пауза'"
+          [title]="(paused() ? 'Воспроизвести' : 'Пауза') + ' (пробел)'"
           (click)="togglePlay()"
         >
           <tui-icon [icon]="paused() ? '@tui.play' : '@tui.pause'" />
@@ -92,6 +158,7 @@
           class="ghost ghost--icon"
           type="button"
           aria-label="Назад на 10 секунд"
+          title="Назад на 10 секунд (←)"
           (click)="seekBy(-10)"
         >
           <tui-icon icon="@tui.rotate-ccw" />
@@ -101,6 +168,7 @@
           class="ghost ghost--icon"
           type="button"
           aria-label="Вперёд на 10 секунд"
+          title="Вперёд на 10 секунд (→)"
           (click)="seekBy(10)"
         >
           <tui-icon icon="@tui.rotate-cw" />
@@ -111,6 +179,7 @@
             class="ghost ghost--icon"
             type="button"
             [attr.aria-label]="muted() ? 'Включить звук' : 'Выключить звук'"
+            [title]="(muted() ? 'Включить звук' : 'Выключить звук') + ' (M)'"
             (click)="toggleMuted()"
           >
             <tui-icon
@@ -136,23 +205,85 @@
           <span class="time__total">/ {{ formatTime(duration()) }}</span>
         </span>
 
-        <details class="quality">
-          <summary class="ghost quality__trigger">
-            {{ actualQuality() ? actualQuality() + 'p' : 'Качество' }}
-          </summary>
-          <div class="quality__menu">
-            @for (option of qualities; track option) {
-              <button
-                class="quality__option"
-                type="button"
-                [class.quality__option--active]="requestedQuality() === option"
-                (click)="changeQuality(option)"
-              >
-                {{ option }}p
-              </button>
-            }
-          </div>
-        </details>
+        @if (upscaleSupported) {
+          <details class="quality upscale" appAutoCloseMenu>
+            <summary class="ghost quality__trigger">
+              {{ upscaleMode() === 'off' ? 'Улучшение' : upscaleLabels[upscaleMode()].title }}
+            </summary>
+            <div class="quality__menu quality__menu--wide">
+              <p class="quality__heading">Улучшение картинки</p>
+              @for (option of upscaleModes; track option) {
+                <button
+                  class="quality__option quality__option--rich"
+                  type="button"
+                  [class.quality__option--active]="upscaleMode() === option"
+                  (click)="changeUpscale(option)"
+                >
+                  {{ upscaleLabels[option].title }}
+                  <span class="quality__hint">{{ upscaleLabels[option].hint }}</span>
+                </button>
+              }
+              @if (upscaleError()) {
+                <p class="quality__note">{{ upscaleError() }}</p>
+              } @else if (upscaleStats(); as stats) {
+                <p class="quality__note quality__note--ok">
+                  {{ stats.sourceHeight }}p → {{ stats.targetHeight }}p ·
+                  {{ stats.fps }} кадр/с
+                </p>
+              } @else if (upscaleMode() !== 'off') {
+                <p class="quality__note quality__note--ok">Включаю…</p>
+              }
+            </div>
+          </details>
+        }
+
+        @if (isLocal()) {
+          <span class="local-badge" title="Серия скачана и играет с диска, без сети">
+            <tui-icon icon="@tui.hard-drive" />
+            С диска
+          </span>
+        } @else {
+          <details class="quality" appAutoCloseMenu>
+            <summary class="ghost quality__trigger">
+              {{ actualQuality() ? actualQuality() + 'p' : 'Качество' }}
+            </summary>
+            <div class="quality__menu">
+              @for (option of qualities; track option) {
+                <button
+                  class="quality__option"
+                  type="button"
+                  [class.quality__option--active]="requestedQuality() === option"
+                  (click)="changeQuality(option)"
+                >
+                  {{ option }}p
+                </button>
+              }
+            </div>
+          </details>
+        }
+
+        @if (pipSupported) {
+          <button
+            class="ghost ghost--icon"
+            type="button"
+            aria-label="Картинка в картинке"
+            title="Картинка в картинке (P)"
+            (click)="togglePip()"
+          >
+            <tui-icon icon="@tui.picture-in-picture-2" />
+          </button>
+        }
+
+        <button
+          class="ghost ghost--icon"
+          type="button"
+          aria-label="Горячие клавиши"
+          title="Горячие клавиши (?)"
+          [attr.aria-expanded]="helpOpen()"
+          (click)="toggleHelp()"
+        >
+          <tui-icon icon="@tui.keyboard" />
+        </button>
 
         <button
           class="ghost ghost--icon"
@@ -160,11 +291,44 @@
           [attr.aria-label]="
             isFullscreen() ? 'Выйти из полного экрана' : 'Во весь экран'
           "
+          [title]="
+            (isFullscreen() ? 'Выйти из полного экрана' : 'Во весь экран') +
+            ' (F)'
+          "
           (click)="toggleFullscreen()"
         >
           <tui-icon [icon]="isFullscreen() ? '@tui.minimize' : '@tui.maximize'" />
         </button>
       </div>
     </div>
+
+    @if (helpOpen()) {
+      <div
+        class="hotkeys"
+        role="dialog"
+        aria-label="Горячие клавиши"
+        (click)="helpOpen.set(false)"
+      >
+        <div class="hotkeys__card" (click)="$event.stopPropagation()">
+          <div class="hotkeys__head">
+            <strong>Горячие клавиши</strong>
+            <button
+              class="ghost ghost--icon"
+              type="button"
+              aria-label="Закрыть"
+              (click)="helpOpen.set(false)"
+            >
+              <tui-icon icon="@tui.x" />
+            </button>
+          </div>
+          <dl class="hotkeys__list">
+            @for (item of hotkeys; track item.keys) {
+              <dt><kbd>{{ item.keys }}</kbd></dt>
+              <dd>{{ item.action }}</dd>
+            }
+          </dl>
+        </div>
+      </div>
+    }
   }
 </div>

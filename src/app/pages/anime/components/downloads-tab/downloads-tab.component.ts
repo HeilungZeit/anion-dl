@@ -11,11 +11,10 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { confirm } from '@tauri-apps/plugin-dialog';
-import { openPath } from '@tauri-apps/plugin-opener';
 import { TuiTextfield } from '@taiga-ui/core';
 import { TuiChevron, TuiDataListWrapper, TuiSelect } from '@taiga-ui/kit';
 
-import type { Video } from '../../../../api/anime.types';
+import type { Poster, Video } from '../../../../api/anime.types';
 import {
   DEFAULT_QUALITY,
   DownloadService,
@@ -55,6 +54,9 @@ export class DownloadsTabComponent {
   readonly dubbing = input.required<string>();
 
   readonly dubbingChange = output<string>();
+  /** Скачанную серию смотрят здесь же, встроенным плеером — он возьмёт файл. */
+  readonly watch = output<Video>();
+  readonly poster = input<Poster | null>(null);
 
   readonly outputDir = signal<string>('');
   readonly lastError = signal<string>('');
@@ -198,7 +200,12 @@ export class DownloadsTabComponent {
         return;
       }
 
-      await this.downloads.enqueue(this.animeId(), title, wanted);
+      await this.downloads.enqueue(
+        this.animeId(),
+        title,
+        wanted,
+        this.poster()
+      );
     } catch (error: unknown) {
       this.lastError.set(String(error));
     }
@@ -247,25 +254,6 @@ export class DownloadsTabComponent {
   /** Файл уже на диске — открываем, а не качаем второй раз. */
   isOnDisk(episode: Video): boolean {
     return this.onDisk().has(episode.videoId);
-  }
-
-  async play(episode: Video): Promise<void> {
-    const path = this.onDisk().get(episode.videoId);
-    if (!path) {
-      return;
-    }
-
-    try {
-      await openPath(path);
-    } catch {
-      // Файл исчез между сверкой и кликом — снимаем пометку, строка сама
-      // вернётся к кнопке «Скачать».
-      this.onDisk.update((current) => {
-        const next = new Map(current);
-        next.delete(episode.videoId);
-        return next;
-      });
-    }
   }
 
   percent(episode: Video): number {

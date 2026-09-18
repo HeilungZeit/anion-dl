@@ -2,11 +2,13 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   HostListener,
   inject,
   OnInit,
 } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { TuiIcon, TuiRoot } from '@taiga-ui/core';
 
@@ -38,6 +40,19 @@ export class AppComponent implements OnInit {
 
   readonly pendingCount = computed(() => this.downloads.pending().length);
 
+  constructor() {
+    // Число загрузок в работе — и на значке приложения: очередь качается
+    // часами, и смотреть на неё удобнее из дока, не разворачивая окно.
+    // На Windows значков нет — там это тихо не срабатывает.
+    effect(() => {
+      const count = this.pendingCount();
+
+      void getCurrentWindow()
+        .setBadgeCount(count > 0 ? count : undefined)
+        .catch(() => undefined);
+    });
+  }
+
   readonly isInitialized = this.users.isInitialized;
   readonly isAuthenticated = this.users.isAuthenticated;
   readonly displayName = this.users.displayName;
@@ -62,6 +77,8 @@ export class AppComponent implements OnInit {
   }
 
   async logout(): Promise<void> {
+    // После выхода сессии нет: неотправленные отметки уходят до него.
+    await this.remoteProgress.flush();
     await this.users.logout();
     this.bookmarks.clear();
     this.remoteProgress.clear();

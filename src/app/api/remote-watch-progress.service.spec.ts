@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   latestAvailableWatchedEpisode,
   normalizeRemoteEpisodes,
+  withEpisode,
 } from './remote-watch-progress.service';
 
 describe('remote watch progress', () => {
@@ -20,5 +21,10 @@ describe('remote watch progress', () => {
 
   test('returns null when this dubbing has no watched episodes', () => {
     expect(latestAvailableWatchedEpisode([4, 5], new Set([1, 2]))).toBeNull();
+  });
+
+  test('adds a watched episode in order without duplicates', () => {
+    expect(withEpisode([1, 4], 3)).toEqual([1, 3, 4]);
+    expect(withEpisode([1, 3], 3)).toEqual([1, 3]);
   });
 });

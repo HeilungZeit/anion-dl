@@ -32,6 +32,12 @@
 .player--idle {
   cursor: none;
 
+  // Без этого курсор не исчезал: у видео свой cursor, и он перебивал
+  // родительский — правило на контейнере до элемента просто не доходило.
+  .player__video {
+    cursor: none;
+  }
+
   .bar {
     opacity: 0;
     pointer-events: none;
@@ -45,6 +51,88 @@
   block-size: 100%;
   object-fit: contain;
   cursor: pointer;
+}
+
+// Результат апскейла кладётся поверх кадра. Само видео продолжает играть под
+// ним: оно и источник кадров для GPU, и источник звука.
+.player__canvas {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player__canvas--on {
+  opacity: 1;
+}
+
+// Заставка из кадров серии до первого запуска. Кадры лежат стопкой и
+// сменяются прозрачностью; клики проходят насквозь к видео под ними.
+.frames {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.frames__image {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 1200ms ease;
+}
+
+.frames__image--current {
+  opacity: 1;
+}
+
+.frames__dots {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: var(--anion-space-16);
+  inset-inline-end: var(--anion-space-16);
+  display: flex;
+  gap: var(--anion-space-6);
+  padding: var(--anion-space-6) var(--anion-space-8);
+  border-radius: var(--anion-radius-pill);
+  background: rgb(0 0 0 / 40%);
+  backdrop-filter: blur(6px);
+}
+
+.frames__dot {
+  inline-size: 8px;
+  block-size: 8px;
+  padding: 0;
+  border: none;
+  border-radius: var(--anion-radius-pill);
+  background: rgb(255 255 255 / 40%);
+  cursor: pointer;
+  outline: none;
+  transition: background var(--anion-duration-base) ease,
+    inline-size var(--anion-duration-base) ease;
+
+  &:hover,
+  &:focus-visible {
+    background: rgb(255 255 255 / 80%);
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+.frames__dot--current {
+  inline-size: 18px;
+  background: #fff;
+}
+
+.player--idle .frames__dots {
+  opacity: 0;
 }
 
 .overlay {
@@ -156,6 +244,54 @@
   }
 }
 
+// Отсчёт до следующей серии стоит там же, где кнопка «Следующая серия»:
+// взгляд уже знает это место.
+.autonext {
+  position: absolute;
+  z-index: 3;
+  inset-block-end: 84px;
+  inset-inline-end: var(--anion-space-20);
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-10);
+  padding: var(--anion-space-12) var(--anion-space-16);
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: var(--anion-radius-md);
+  background: rgb(0 0 0 / 72%);
+  color: #fff;
+  font-size: var(--anion-font-size-13);
+  backdrop-filter: blur(6px);
+
+  strong {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.autonext__actions {
+  display: flex;
+  gap: var(--anion-space-8);
+  justify-content: flex-end;
+}
+
+.autonext__go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--anion-space-6);
+  padding: var(--anion-space-6) var(--anion-space-12);
+  border: none;
+  border-radius: var(--anion-radius-sm);
+  background: var(--anion-accent);
+  color: var(--anion-text-on-brand);
+  cursor: pointer;
+  font-size: var(--anion-font-size-13);
+  font-weight: 600;
+  outline: none;
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
 .bar {
   position: absolute;
   z-index: 2;
@@ -179,7 +315,11 @@
   cursor: pointer;
   touch-action: none;
 
-  span {
+  // Именно три полосы, а не любой span внутри: по специфичности `.seek span`
+  // перебил бы `.seek__tip`, и подсказка превратилась бы в полоску 4px.
+  .seek__track,
+  .seek__buffer,
+  .seek__fill {
     position: absolute;
     inset-block-start: 50%;
     inset-inline-start: 0;
@@ -188,6 +328,23 @@
     transform: translateY(-50%);
     pointer-events: none;
   }
+}
+
+// Подсказка времени над точкой под курсором. Сдвиг transform ставит её на
+// половину ширины левее, чтобы она стояла ровно над курсором.
+.seek__tip {
+  position: absolute;
+  z-index: 4;
+  inset-block-end: calc(100% + 2px);
+  padding: 2px var(--anion-space-6);
+  border-radius: var(--anion-radius-xs);
+  background: rgb(0 0 0 / 86%);
+  color: #fff;
+  font-size: var(--anion-font-size-11);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .seek__track {
@@ -318,6 +475,117 @@
   }
 }
 
+.quality__menu--wide {
+  min-inline-size: 260px;
+}
+
+.quality__heading {
+  margin: 0;
+  padding: var(--anion-space-6) var(--anion-space-16) var(--anion-space-4);
+  color: rgb(255 255 255 / 58%);
+  font-size: var(--anion-font-size-11);
+}
+
+.quality__option--rich {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+}
+
+.quality__hint {
+  color: rgb(255 255 255 / 58%);
+  font-size: var(--anion-font-size-11);
+  font-weight: 400;
+}
+
+.quality__note {
+  margin: var(--anion-space-4) 0 0;
+  padding: 0 var(--anion-space-8);
+  color: var(--anion-negative-text);
+  font-size: var(--anion-font-size-11);
+}
+
+.quality__note--ok {
+  color: rgb(255 255 255 / 58%);
+}
+
+.upscale {
+  margin-inline-start: 0;
+}
+
+.local-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--anion-space-4);
+  margin-inline-start: auto;
+  padding: var(--anion-space-4) var(--anion-space-10);
+  border-radius: var(--anion-radius-pill);
+  background: rgb(255 255 255 / 12%);
+  color: rgb(255 255 255 / 82%);
+  font-size: var(--anion-font-size-12);
+  font-weight: 600;
+  white-space: nowrap;
+
+  tui-icon {
+    font-size: var(--anion-icon-16);
+  }
+}
+
+// Справка поверх кадра, но внутри плеера: в полноэкранном режиме диалог
+// снаружи оказался бы под ним.
+.hotkeys {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 56%);
+}
+
+.hotkeys__card {
+  min-inline-size: 320px;
+  padding: var(--anion-space-12) var(--anion-space-16) var(--anion-space-16);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-md);
+  background: var(--anion-bg-elevated);
+  box-shadow: var(--anion-shadow-card-hover);
+  color: var(--anion-text-primary);
+  font-size: var(--anion-font-size-13);
+}
+
+.hotkeys__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: var(--anion-space-8);
+}
+
+.hotkeys__list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--anion-space-8) var(--anion-space-16);
+  margin: 0;
+
+  dt,
+  dd {
+    margin: 0;
+  }
+
+  dd {
+    color: var(--anion-text-secondary);
+  }
+
+  kbd {
+    padding: 1px var(--anion-space-6);
+    border: 1px solid var(--anion-border-strong);
+    border-radius: var(--anion-radius-xs);
+    font-family: inherit;
+    font-size: var(--anion-font-size-12);
+    white-space: nowrap;
+  }
+}
+
 .quality__option--active {
   color: var(--anion-accent-text);
   font-weight: 700;
@@ -329,7 +597,8 @@
   }
 
   .bar,
-  .bigplay {
+  .bigplay,
+  .frames__image {
     transition: none;
   }
 }

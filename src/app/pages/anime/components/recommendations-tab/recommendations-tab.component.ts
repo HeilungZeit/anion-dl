@@ -9,11 +9,12 @@ import { TuiLoader } from '@taiga-ui/core';
 
 import { AnimeService } from '../../../../api/anime.service';
 import { AnimeCardComponent } from '../../../../components/anime-card/anime-card.component';
+import { LoadErrorComponent } from '../../../../components/load-error/load-error.component';
 
 /** Вкладка «Похожие аниме»: та же сетка карточек, что на главной. */
 @Component({
   selector: 'app-recommendations-tab',
-  imports: [AnimeCardComponent, TuiLoader],
+  imports: [AnimeCardComponent, LoadErrorComponent, TuiLoader],
   templateUrl: './recommendations-tab.component.html',
   styleUrl: './recommendations-tab.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

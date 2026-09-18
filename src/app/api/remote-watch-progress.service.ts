@@ -9,6 +9,12 @@ interface RemoteProgressState {
   loadedAnimeIds: ReadonlySet<number>;
 }
 
+/**
+ * Отметки уходят пачкой, как на фронте: перемотка туда-обратно и повторный
+ * play не должны превращаться в серию запросов.
+ */
+const FLUSH_DELAY_MS = 2000;
+
 const EMPTY_STATE: RemoteProgressState = {
   userId: null,
   episodesByAnimeId: {},
@@ -43,18 +49,32 @@ export function latestAvailableWatchedEpisode(
   return latest;
 }
 
+/** Добавляет серию к отсортированному списку без повторов. */
+export function withEpisode(
+  episodes: readonly number[],
+  episode: number
+): number[] {
+  return normalizeRemoteEpisodes([...episodes, episode]);
+}
+
 /**
- * Read-only кэш серверных отметок серий.
+ * Серверные отметки просмотренных серий: чтение и запись.
  *
  * Он намеренно не связан с локальным WatchProgressService: локальный сервис
- * хранит точную позицию и озвучку для продолжения, этот только читает общие
- * для аккаунта номера просмотренных серий с бэка.
+ * хранит точную позицию и озвучку для продолжения, этот работает только с
+ * общими для аккаунта номерами серий. Запись повторяет фронт
+ * (`anion/src/app/store/watch-progress.store.ts`): `PUT /watch-progress/:id`
+ * с номерами серий, сервер объединяет их с уже отмеченными, поэтому повтор
+ * после обрыва ничего не портит.
  */
 @Injectable({ providedIn: 'root' })
 export class RemoteWatchProgressService {
   private readonly api = inject(ApiClient);
   private readonly state = signal<RemoteProgressState>(EMPTY_STATE);
   private readonly pending = new Map<number, Promise<void>>();
+  /** Отметки, которые ещё не ушли на сервер: animeId → номера серий. */
+  private readonly unsent = new Map<number, Set<number>>();
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private generation = 0;
 
   episodesFor(animeId: number, userId: number | null): readonly number[] {
@@ -67,6 +87,11 @@ export class RemoteWatchProgressService {
 
   ensureLoaded(animeId: number, userId: number): Promise<void> {
     this.useAccount(userId);
+
+    // Открытие тайтла — удобный повод дослать то, что не ушло из-за сети.
+    if (this.unsent.size > 0 && this.flushTimer === null) {
+      void this.flush();
+    }
 
     if (this.state().loadedAnimeIds.has(animeId)) {
       return Promise.resolve();
@@ -85,7 +110,12 @@ export class RemoteWatchProgressService {
           return;
         }
 
-        const episodes = normalizeRemoteEpisodes(progress?.episodes ?? []);
+        // Серия могла быть отмечена, пока ехал ответ: он её ещё не содержит,
+        // поэтому склеиваем, а не затираем.
+        const episodes = normalizeRemoteEpisodes([
+          ...(progress?.episodes ?? []),
+          ...(this.state().episodesByAnimeId[animeId] ?? []),
+        ]);
         this.state.update((current) => ({
           ...current,
           episodesByAnimeId: {
@@ -105,10 +135,88 @@ export class RemoteWatchProgressService {
     return request;
   }
 
+  /** Отметить серию просмотренной: сразу в UI, на сервер — с дебаунсом. */
+  markWatched(animeId: number, userId: number, episode: number): void {
+    if (!Number.isInteger(episode) || episode < 1) {
+      return;
+    }
+
+    this.useAccount(userId);
+
+    const current = this.state().episodesByAnimeId[animeId] ?? [];
+    if (current.includes(episode)) {
+      return;
+    }
+
+    this.state.update((state) => ({
+      ...state,
+      episodesByAnimeId: {
+        ...state.episodesByAnimeId,
+        [animeId]: withEpisode(current, episode),
+      },
+    }));
+
+    const queued = this.unsent.get(animeId) ?? new Set<number>();
+    this.unsent.set(animeId, queued.add(episode));
+    this.scheduleFlush();
+  }
+
+  /**
+   * Досылка накопленного. Неудачная отметка возвращается в очередь и уйдёт
+   * со следующей: плеер стримит с Kodik, так что без сети новых отметок не
+   * будет, а при восстановлении связи старые догонят их.
+   */
+  async flush(): Promise<void> {
+    if (this.flushTimer !== null) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    const generation = this.generation;
+    const batches = [...this.unsent.entries()];
+    this.unsent.clear();
+
+    for (const [animeId, episodes] of batches) {
+      try {
+        await this.api.put<RemoteWatchProgress>(`/watch-progress/${animeId}`, {
+          episodes: [...episodes].sort((left, right) => left - right),
+        });
+      } catch {
+        // Отметки чужого аккаунта после выхода досылать нельзя.
+        if (generation !== this.generation) {
+          continue;
+        }
+
+        const queued = this.unsent.get(animeId) ?? new Set<number>();
+        this.unsent.set(animeId, new Set([...queued, ...episodes]));
+      }
+    }
+  }
+
   clear(): void {
     this.generation += 1;
     this.pending.clear();
+    this.dropUnsent();
     this.state.set(EMPTY_STATE);
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer !== null) {
+      return;
+    }
+
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      void this.flush();
+    }, FLUSH_DELAY_MS);
+  }
+
+  private dropUnsent(): void {
+    this.unsent.clear();
+    if (this.flushTimer !== null) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
   }
 
   private useAccount(userId: number): void {
@@ -118,6 +226,7 @@ export class RemoteWatchProgressService {
 
     this.generation += 1;
     this.pending.clear();
+    this.dropUnsent();
     this.state.set({
       userId,
       episodesByAnimeId: {},

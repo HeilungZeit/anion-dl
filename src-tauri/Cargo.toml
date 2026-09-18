@@ -1,6 +1,6 @@
 [package]
 name = "anion-dl"
-version = "1.1.0"
+version = "2.0.0"
 description = "Оффлайн-качалка серий для anion"
 authors = ["Dmitry Gavrichenko"]
 edition = "2021"
@@ -18,7 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# protocol-asset — встроенный плеер играет скачанные серии прямо с диска.
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-http = "2"
 tauri-plugin-shell = "2"
@@ -37,3 +38,4 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Ссылки Kodik приезжают как base64 поверх посимвольного сдвига. Крейт без
 # собственных зависимостей — дешевле, чем свой декодер с краевыми случаями.
 base64 = "0.22"
+tauri-plugin-notification = "2"

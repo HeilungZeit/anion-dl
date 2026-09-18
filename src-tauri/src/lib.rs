@@ -14,7 +14,8 @@ pub fn run() {
             resolver::change_manifest_quality,
             download::download_episode,
             download::cancel_download,
-            files::probe_files
+            files::probe_files,
+            files::allow_playback
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -23,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -10,10 +10,11 @@ import { TuiLoader } from '@taiga-ui/core';
 import { AnimeService } from '../../api/anime.service';
 import { WatchProgressService } from '../../api/watch-progress.service';
 import { AnimeCardComponent } from '../../components/anime-card/anime-card.component';
+import { LoadErrorComponent } from '../../components/load-error/load-error.component';
 
 @Component({
   selector: 'app-feed',
-  imports: [AnimeCardComponent, RouterLink, TuiLoader],
+  imports: [AnimeCardComponent, LoadErrorComponent, RouterLink, TuiLoader],
   templateUrl: './feed.component.html',
   styleUrl: './feed.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

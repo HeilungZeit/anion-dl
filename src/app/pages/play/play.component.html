@@ -1,0 +1,70 @@
+@if (!ready()) {
+  <tui-loader size="l" />
+} @else if (task(); as current) {
+  <div class="page">
+    <header class="head">
+      <a class="head__back" routerLink="/downloads">← Загрузки</a>
+      <div class="head__title">
+        <h1>{{ current.title }}</h1>
+        <p>Серия {{ current.episode }} · {{ current.dubbing }}</p>
+      </div>
+      @if (current.animeId) {
+        <a class="head__link" [routerLink]="['/anime', current.animeId]">
+          Страница аниме
+        </a>
+      }
+    </header>
+
+    @if (current.status !== 'done' || isMissing()) {
+      <div class="notice">
+        <strong>Смотреть пока нечего</strong>
+        <span>
+          {{
+            isMissing()
+              ? 'Файл этой серии удалён или перемещён.'
+              : 'Серия ещё не скачалась.'
+          }}
+        </span>
+        <a routerLink="/downloads">К загрузкам</a>
+      </div>
+    } @else {
+      <app-video-player
+        [iframeUrl]="current.iframeUrl"
+        [isLastEpisode]="nextTask() === null"
+        [localPath]="current.outputPath"
+        [poster]="current.poster?.big ?? ''"
+        [startPositionSecs]="startPositionSecs()"
+        (ended)="markEnded($event)"
+        (nextEpisode)="goNext()"
+        (playbackPaused)="saveAndFlush($event)"
+        (playbackStarted)="markWatched()"
+        (progress)="saveProgress($event)"
+      />
+    }
+
+    @if (siblings().length > 1) {
+      <nav class="episodes" aria-label="Скачанные серии">
+        <span class="episodes__label">Скачано в этой озвучке</span>
+        <div class="episodes__list">
+          @for (item of siblings(); track item.id) {
+            <a
+              class="episodes__item"
+              [class.episodes__item--current]="item.id === current.id"
+              [attr.aria-current]="item.id === current.id ? 'true' : null"
+              [routerLink]="['/play', item.id]"
+              [replaceUrl]="true"
+            >
+              {{ item.episode }}
+            </a>
+          }
+        </div>
+      </nav>
+    }
+  </div>
+} @else {
+  <div class="notice">
+    <strong>Серия не найдена</strong>
+    <span>Возможно, её убрали из списка загрузок.</span>
+    <a routerLink="/downloads">К загрузкам</a>
+  </div>
+}

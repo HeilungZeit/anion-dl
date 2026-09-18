@@ -7,12 +7,14 @@ import {
   input,
   resource,
   signal,
+  viewChild,
 } from '@angular/core';
 import { TuiLoader } from '@taiga-ui/core';
 import { TuiTabs } from '@taiga-ui/kit';
 
 import { AnimeService } from '../../api/anime.service';
 import type { Video } from '../../api/anime.types';
+import { LoadErrorComponent } from '../../components/load-error/load-error.component';
 import { AnimeHeaderComponent } from './components/anime-header/anime-header.component';
 import { DescriptionTabComponent } from './components/description-tab/description-tab.component';
 import { DownloadsTabComponent } from './components/downloads-tab/downloads-tab.component';
@@ -37,6 +39,7 @@ const KODIK_PLAYER = 'Kodik';
     AnimeHeaderComponent,
     DescriptionTabComponent,
     DownloadsTabComponent,
+    LoadErrorComponent,
     RecommendationsTabComponent,
     TuiLoader,
     TuiTabs,
@@ -47,6 +50,7 @@ const KODIK_PLAYER = 'Kodik';
 })
 export class AnimeComponent {
   private readonly api = inject(AnimeService);
+  private readonly watchTab = viewChild(DescriptionTabComponent);
 
   readonly id = input.required<string>();
   readonly episode = input<string>();
@@ -87,6 +91,18 @@ export class AnimeComponent {
       .filter((video) => Number(video.number) >= 1)
       .sort((a, b) => Number(a.number) - Number(b.number));
   });
+
+  /**
+   * «Смотреть» во вкладке загрузок: на вкладку просмотра с этой серией. Она
+   * сама найдёт файл на диске. Выбор прямой, а не через `?episode=`: параметр
+   * адреса применяется один раз, и повторный переход на ту же серию молча
+   * ничего бы не сделал.
+   */
+  watchEpisode(episode: Video): void {
+    this.selectedDubbing.set(episode.data.dubbing);
+    this.watchTab()?.select(episode);
+    this.tabIndex.set(0);
+  }
 
   constructor() {
     // Первая доступная озвучка выбирается сама — иначе список серий пуст,

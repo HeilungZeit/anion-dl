@@ -1,0 +1,114 @@
+:host {
+  display: block;
+}
+
+.page {
+  display: flex;
+  inline-size: 100%;
+  max-inline-size: 1180px;
+  flex-direction: column;
+  gap: var(--anion-space-20);
+  margin-inline: auto;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-16);
+}
+
+.head__title {
+  flex: 1;
+  min-inline-size: 0;
+
+  h1 {
+    overflow: hidden;
+    margin: 0;
+    font-size: var(--anion-font-size-20);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  p {
+    margin: var(--anion-space-2) 0 0;
+    color: var(--anion-text-secondary);
+    font-size: var(--anion-font-size-13);
+  }
+}
+
+.head__back,
+.head__link {
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--anion-text-primary);
+  }
+}
+
+.notice {
+  display: flex;
+  min-block-size: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--anion-space-8);
+  border: 1px dashed var(--anion-border);
+  border-radius: var(--anion-radius-xl);
+  color: var(--anion-text-secondary);
+  text-align: center;
+
+  strong {
+    color: var(--anion-text-primary);
+  }
+
+  a {
+    color: var(--anion-accent-text);
+  }
+}
+
+.episodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--anion-space-8);
+}
+
+.episodes__label {
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-12);
+}
+
+.episodes__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--anion-space-8);
+}
+
+.episodes__item {
+  display: grid;
+  min-inline-size: 44px;
+  block-size: 40px;
+  padding-inline: var(--anion-space-8);
+  place-items: center;
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-md);
+  background: var(--anion-surface-2);
+  color: var(--anion-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--anion-accent);
+  }
+}
+
+.episodes__item--current {
+  border-color: var(--anion-accent);
+  background: var(--anion-accent);
+  color: var(--anion-text-on-brand);
+}

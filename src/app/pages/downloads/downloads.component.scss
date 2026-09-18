@@ -55,6 +55,8 @@
 }
 
 .action {
+  display: inline-flex;
+  align-items: center;
   min-block-size: 36px;
   padding-inline: var(--anion-space-12);
   border: 1px solid var(--anion-border);
@@ -65,6 +67,8 @@
   font-size: var(--anion-font-size-12);
   font-weight: 600;
   outline: none;
+  // «Смотреть» — ссылка на страницу плеера, а выглядеть должна как кнопки рядом.
+  text-decoration: none;
   white-space: nowrap;
   transition: background var(--anion-duration-base) ease,
     border-color var(--anion-duration-base) ease;

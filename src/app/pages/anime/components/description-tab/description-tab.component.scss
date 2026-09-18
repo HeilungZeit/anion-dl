@@ -186,6 +186,28 @@
   line-height: 1;
 }
 
+// Где остановился в недосмотренной серии — тонкая полоса по низу плитки.
+.episode-progress {
+  position: absolute;
+  inset-block-end: var(--anion-space-4);
+  inset-inline: var(--anion-space-6);
+  overflow: hidden;
+  block-size: 3px;
+  border-radius: var(--anion-radius-pill);
+  background: rgb(255 255 255 / 16%);
+
+  span {
+    display: block;
+    block-size: 100%;
+    border-radius: inherit;
+    background: var(--anion-accent);
+  }
+}
+
+.episode-item--selected .episode-progress span {
+  background: var(--anion-text-on-brand);
+}
+
 .episode-status {
   position: absolute;
   inset-block-start: calc(var(--anion-space-6) * -1);

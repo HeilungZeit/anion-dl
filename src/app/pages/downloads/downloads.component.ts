@@ -8,7 +8,7 @@ import {
   viewChildren,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
 import { DownloadService, DownloadTask } from '../../api/download.service';
 
@@ -127,17 +127,6 @@ export class DownloadsComponent {
   reveal(task: DownloadTask): Promise<void> {
     return revealItemInDir(task.outputPath);
   }
-
-  /** Запускает серию в системном плеере — ради этого всё и качалось. */
-  async play(task: DownloadTask): Promise<void> {
-    try {
-      await openPath(task.outputPath);
-    } catch {
-      // Файл мог исчезнуть между сверкой и кликом. Тихо пересверяемся: строка
-      // сама переоденется в «Файл удалён», диалог здесь был бы лишним.
-      await this.downloads.refreshFiles();
-    }
-  }
 }
 
 function megabytes(bytes: number): string {
@@ -159,4 +148,5 @@ function revealLabel(): string {
   return agent.includes('Windows')
     ? 'Показать в проводнике'
     : 'Показать в папке';
+
 }

@@ -1,7 +1,12 @@
 @if (anime.isLoading()) {
   <tui-loader size="l" />
 } @else if (anime.error()) {
-  <p class="error">Не удалось загрузить аниме: {{ anime.error()?.message }}</p>
+  <app-load-error
+    title="Не удалось загрузить аниме"
+    [message]="anime.error()?.message"
+    [offlineHint]="true"
+    (retry)="anime.reload()"
+  />
 } @else if (anime.value(); as data) {
   <div class="page">
     <app-anime-header [anime]="data" />
@@ -29,7 +34,6 @@
         [episodes]="episodes()"
         [requestedEpisode]="requestedEpisode()"
         [videos]="kodikVideos()"
-        [videos]="kodikVideos()"
         (dubbingChange)="selectedDubbing.set($event)"
       />
     </div>
@@ -40,9 +44,11 @@
         [dubbing]="selectedDubbing()"
         [dubbings]="dubbings()"
         [episodes]="episodes()"
+        [poster]="data.poster"
         [title]="data.title"
         [videos]="kodikVideos()"
         (dubbingChange)="selectedDubbing.set($event)"
+        (watch)="watchEpisode($event)"
       />
     }
 

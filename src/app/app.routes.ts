@@ -36,6 +36,12 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'play/:taskId',
+    title: 'Просмотр — Anion Flow',
+    loadComponent: () =>
+      import('./pages/play/play.component').then((m) => m.PlayComponent),
+  },
+  {
     path: 'bookmarks',
     redirectTo: 'bookmarks/watching',
     pathMatch: 'full',

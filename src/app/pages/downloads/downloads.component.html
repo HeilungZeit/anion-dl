@@ -80,9 +80,9 @@
                 </button>
               } @else if (task.status === 'done' && !isMissing(task)) {
                 <span class="tasks__actions">
-                  <button type="button" class="action" (click)="play(task)">
-                    Открыть
-                  </button>
+                  <a class="action" [routerLink]="['/play', task.id]">
+                    Смотреть
+                  </a>
                   <button
                     type="button"
                     class="action action--quiet"

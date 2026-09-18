@@ -9,6 +9,7 @@ import {
 
 import { AnimeService, type CommentsQuery } from '../../../../api/anime.service';
 import type { Comment } from '../../../../api/anime.types';
+import { absoluteMediaUrl } from '../../../../api/media-url';
 import { parseCommentText, type CommentPart } from './comment-text';
 
 const PAGE_SIZE = 20;
@@ -47,6 +48,11 @@ export class CommentsComponent {
 
       void this.reload(id, sort);
     });
+  }
+
+  /** Аватарка приходит без схемы — в вебвью такой адрес не грузится. */
+  avatar(comment: Comment): string {
+    return absoluteMediaUrl(comment.avatars.small);
   }
 
   parts(comment: Comment): CommentPart[] {

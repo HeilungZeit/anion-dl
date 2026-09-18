@@ -5,8 +5,13 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { LazyStore } from '@tauri-apps/plugin-store';
 
 import { DEFAULT_QUALITY } from '../player/manifest-quality';
+import {
+  ensureNoticePermission,
+  notifyIfAway,
+  summarizeDownloads,
+} from './download-notice';
 import { ResolverService } from './resolver.service';
-import type { Video } from './anime.types';
+import type { Poster, Video } from './anime.types';
 
 const PROGRESS_EVENT = 'download://progress';
 const SETTINGS_FILE = 'settings.json';
@@ -66,6 +71,11 @@ export interface DownloadTask {
   error: string;
   /** Файл скачан, но ffmpeg ворчал. Не ошибка — задача остаётся успешной. */
   warning: string;
+  /**
+   * Постер тайтла — для ряда «Продолжить смотреть», когда серию смотрят с
+   * диска без сети. У задач из старых версий его нет.
+   */
+  poster?: Poster | null;
 }
 
 interface DownloadReport {
@@ -94,6 +104,8 @@ export class DownloadService {
   private readonly resolver = inject(ResolverService);
 
   readonly tasks = signal<DownloadTask[]>([]);
+  /** Задачи прочитаны с диска: до этого пустой список ещё ничего не значит. */
+  readonly restored = signal(false);
 
   readonly pending = computed(() =>
     this.tasks().filter((task) => ACTIVE.includes(task.status))
@@ -206,9 +218,11 @@ export class DownloadService {
   async enqueue(
     animeId: number,
     animeTitle: string,
-    episodes: Video[]
+    episodes: Video[],
+    poster: Poster | null = null
   ): Promise<void> {
     const paths = await this.plannedPaths(animeTitle, episodes);
+    void ensureNoticePermission();
 
     for (const episode of episodes) {
       const id = `${episode.videoId}`;
@@ -232,6 +246,7 @@ export class DownloadService {
         outputPath: paths.get(episode.videoId) ?? '',
         error: '',
         warning: '',
+        poster,
       });
     }
 
@@ -319,19 +334,33 @@ export class DownloadService {
     }
 
     this.running = true;
+    const done: DownloadTask[] = [];
+    const failed: DownloadTask[] = [];
 
     try {
       for (;;) {
         const next = this.tasks().find((task) => task.status === 'queued');
         if (!next) {
-          return;
+          break;
         }
 
         await this.process(next);
         await this.persist();
+
+        const result = this.tasks().find((task) => task.id === next.id);
+        if (result?.status === 'done') {
+          done.push(result);
+        } else if (result?.status === 'failed') {
+          failed.push(result);
+        }
       }
     } finally {
       this.running = false;
+    }
+
+    const notice = summarizeDownloads(done, failed);
+    if (notice) {
+      void notifyIfAway(notice);
     }
   }
 
@@ -394,6 +423,7 @@ export class DownloadService {
       }))
     );
 
+    this.restored.set(true);
     void this.refreshFiles();
     void this.drain();
   }

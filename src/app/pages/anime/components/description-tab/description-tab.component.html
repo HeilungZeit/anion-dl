@@ -81,22 +81,30 @@
                 @if (isWatched(episode)) {
                   <span class="episode-status" aria-hidden="true">✓</span>
                 }
+                @if (progressOf(episode); as percent) {
+                  <span class="episode-progress" aria-hidden="true">
+                    <span [style.width.%]="percent"></span>
+                  </span>
+                }
               </button>
             }
           </div>
         </div>
       </div>
 
-      @if (progressInitialized() && selectedEpisode(); as episode) {
+      @if (playerReady() && selectedEpisode(); as episode) {
         <app-video-player
           [iframeUrl]="episode.iframeUrl"
+          [localPath]="localPath()"
           [isLastEpisode]="isLastEpisode()"
+          [frames]="frames()"
           [poster]="preview()"
           [skips]="episode.skips"
           [startPositionSecs]="startPositionSecs()"
           (ended)="markEnded($event)"
           (nextEpisode)="goToNextEpisode()"
           (playbackPaused)="saveAndFlush($event)"
+          (playbackStarted)="markWatched($event)"
           (progress)="saveProgress($event)"
         />
       }

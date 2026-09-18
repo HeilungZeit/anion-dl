@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   DestroyRef,
   effect,
   ElementRef,
@@ -12,15 +13,27 @@ import {
   viewChild,
 } from '@angular/core';
 import { TuiIcon } from '@taiga-ui/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Hls, { type ErrorData, type HlsConfig } from 'hls.js';
 
 import type { VideoSkips } from '../api/anime.types';
 import { ResolverService } from '../api/resolver.service';
+import { AutoCloseMenuDirective } from './auto-close-menu.directive';
 import { DEFAULT_QUALITY, QUALITIES, qualityOf } from './manifest-quality';
+import { PlayerSettingsService } from './player-settings.service';
 import { ReResolveOnForbidden } from './re-resolve';
 import { shouldRefreshAhead } from './signature-clock';
 import { SkipController, type SkipHint } from './skip-controller';
+import {
+  isWebGpuAvailable,
+  startUpscale,
+  UPSCALE_LABELS,
+  UPSCALE_MODES,
+  type UpscaleHandle,
+  type UpscaleMode,
+  type UpscaleStats,
+} from './upscale';
 
 export interface PlaybackProgress {
   iframeUrl: string;
@@ -37,7 +50,68 @@ const SEEK_STEP_SECS = 10;
 
 /** Сколько панель держится после последнего движения мыши. */
 const CONTROLS_HIDE_MS = 2500;
+
+/**
+ * Окно ожидания второго клика.
+ *
+ * Одиночный клик переключает воспроизведение, двойной — полный экран. Без
+ * задержки двойной успел бы дважды дёрнуть play/pause до того, как станет
+ * ясно, что это был именно двойной.
+ */
+const DOUBLE_CLICK_MS = 220;
 const VOLUME_STEP = 0.05;
+
+/** Сколько секунд даётся, чтобы отменить переход на следующую серию. */
+export const AUTO_NEXT_SECS = 5;
+
+/** Как долго держится один кадр заставки до смены. */
+const FRAME_INTERVAL_MS = 6000;
+
+/** Громкость пишется на диск не на каждый шаг ползунка, а когда он замер. */
+const VOLUME_SAVE_MS = 500;
+
+/**
+ * Горячие клавиши — и для обработчика, и для справки по «?». Буквы сверяются
+ * по `event.code`, то есть по физической клавише: с русской раскладкой
+ * `event.key` вместо «k» приносит «л», и управление молча переставало работать.
+ */
+export const HOTKEYS: readonly { keys: string; action: string }[] = [
+  { keys: 'Пробел / K', action: 'Пауза и воспроизведение' },
+  { keys: '← / →', action: 'Назад / вперёд на 10 секунд' },
+  { keys: '↑ / ↓', action: 'Громкость' },
+  { keys: 'M', action: 'Выключить звук' },
+  { keys: 'F', action: 'Полный экран' },
+  { keys: 'P', action: 'Картинка в картинке' },
+  { keys: 'N', action: 'Следующая серия' },
+  { keys: '?', action: 'Эта справка' },
+  { keys: 'Esc', action: 'Закрыть справку, выйти из полного экрана' },
+];
+
+/**
+ * WebKit до сих пор держит «картинку в картинке» за собственным API, а
+ * стандартный есть не во всех его сборках. Поддерживаем оба.
+ */
+interface WebKitVideo extends HTMLVideoElement {
+  webkitSupportsPresentationMode?: (mode: string) => boolean;
+  webkitSetPresentationMode?: (mode: string) => void;
+  webkitPresentationMode?: string;
+}
+
+function isPipSupported(): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  if (document.pictureInPictureEnabled) {
+    return true;
+  }
+
+  const probe = document.createElement('video') as WebKitVideo;
+  return (
+    typeof probe.webkitSupportsPresentationMode === 'function' &&
+    probe.webkitSupportsPresentationMode('picture-in-picture')
+  );
+}
 
 export function formatTime(totalSecs: number): string {
   if (!Number.isFinite(totalSecs) || totalSecs < 0) {
@@ -54,19 +128,33 @@ export function formatTime(totalSecs: number): string {
 
 @Component({
   selector: 'app-video-player',
-  imports: [TuiIcon],
+  imports: [TuiIcon, AutoCloseMenuDirective],
   templateUrl: './video-player.component.html',
   styleUrl: './video-player.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class VideoPlayerComponent {
   private readonly resolver = inject(ResolverService);
+  private readonly settings = inject(PlayerSettingsService);
 
   /** URL плеера Kodik: из него резолвится манифест. */
   readonly iframeUrl = input.required<string>();
   readonly skips = input<VideoSkips>({});
   readonly isLastEpisode = input(false);
   readonly poster = input('');
+
+  /**
+   * Кадры из серий для заставки до запуска. Сменяются сами; постер остаётся
+   * запасным вариантом, когда кадров нет.
+   */
+  readonly frames = input<readonly string[]>([]);
+
+  /**
+   * Путь к скачанному mp4. Если задан, поток с Kodik не резолвится вовсе:
+   * серия играет с диска — быстрее, без сети и без протухающих подписей.
+   * `iframeUrl` при этом остаётся ключом серии для прогресса.
+   */
+  readonly localPath = input<string | null>(null);
 
   /**
    * Откуда начать. Читается один раз на серию и намеренно не отслеживается
@@ -78,6 +166,11 @@ export class VideoPlayerComponent {
   readonly ended = output<PlaybackProgress>();
   readonly nextEpisode = output<void>();
   readonly playbackPaused = output<PlaybackProgress>();
+  /**
+   * Воспроизведение действительно пошло. Каждый `play`, а не только первый:
+   * повторы отсекает получатель, а плееру незачем помнить, что уже сообщал.
+   */
+  readonly playbackStarted = output<string>();
 
   readonly status = signal<PlayerStatus>('resolving');
   readonly errorText = signal('');
@@ -95,8 +188,69 @@ export class VideoPlayerComponent {
   readonly isFullscreen = signal(false);
   readonly skipHint = signal<SkipHint | null>(null);
 
+  /** Играет ли сейчас файл с диска: у него нет ни качества, ни подписи. */
+  readonly isLocal = signal(false);
+
+  /** Обратный отсчёт до следующей серии; null — отсчёта нет. */
+  readonly autoNextSecs = signal<number | null>(null);
+
+  /** Кадры, которые не загрузились, — из показа убираются. */
+  private readonly brokenFrames = signal<ReadonlySet<string>>(new Set());
+  readonly visibleFrames = computed(() => {
+    const broken = this.brokenFrames();
+    return this.frames().filter((url) => !broken.has(url));
+  });
+  readonly frameIndex = signal(0);
+
+  /**
+   * Воспроизведение этой серии уже шло. Заставка нужна только до первого
+   * запуска: на паузе посреди серии человек хочет видеть свой кадр.
+   */
+  readonly playedOnce = signal(false);
+  readonly showFrames = computed(
+    () => !this.playedOnce() && this.visibleFrames().length > 0
+  );
+
+  /** Кадры в DOM: текущий, прошлый — для плавной смены — и следующий впрок. */
+  readonly mountedFrames = computed(() => {
+    const frames = this.visibleFrames();
+    const count = frames.length;
+    const current = this.frameIndex() % Math.max(count, 1);
+
+    return frames
+      .map((url, index) => ({ url, index }))
+      .filter(
+        ({ index }) =>
+          index === current ||
+          index === (current + 1) % count ||
+          index === (current - 1 + count) % count
+      );
+  });
+
+  readonly pipSupported = isPipSupported();
+  readonly hotkeys = HOTKEYS;
+  readonly helpOpen = signal(false);
+
   /** Панель прячется только во время игры: на паузе она нужна всегда. */
   readonly controlsVisible = signal(true);
+
+  /** Время под курсором на полосе перемотки; null — курсора на ней нет. */
+  readonly hoverSecs = signal<number | null>(null);
+  readonly hoverPercent = signal(0);
+
+  /** Апскейл: режим, доступность и возможная ошибка запуска. */
+  readonly upscaleMode = signal<UpscaleMode>('off');
+  readonly upscaleModes = UPSCALE_MODES;
+  readonly upscaleLabels = UPSCALE_LABELS;
+  readonly upscaleSupported = isWebGpuAvailable();
+  readonly upscaleError = signal('');
+  readonly upscaleStats = signal<UpscaleStats | null>(null);
+
+  /** Растёт на каждой пересборке потока — сигнал апскейлу пересобраться. */
+  private readonly manifestGeneration = signal(0);
+  readonly upscaleActive = computed(
+    () => this.upscaleMode() !== 'off' && this.upscaleError() === ''
+  );
 
   /**
    * Нажимал ли человек «play» хоть раз.
@@ -111,6 +265,8 @@ export class VideoPlayerComponent {
 
   private readonly videoRef =
     viewChild<ElementRef<HTMLVideoElement>>('video');
+  private readonly canvasRef =
+    viewChild<ElementRef<HTMLCanvasElement>>('canvas');
 
   private hls: Hls | null = null;
   private manifestUrl = '';
@@ -126,12 +282,84 @@ export class VideoPlayerComponent {
   private expectResume = false;
   private scrubbing = false;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
+  private clickTimer: ReturnType<typeof setTimeout> | null = null;
+  private upscaler: UpscaleHandle | null = null;
+  /** Отсекает запуск апскейла, который успел устареть, пока ждал GPU. */
+  private upscaleToken = 0;
+  private autoNextTimer: ReturnType<typeof setInterval> | null = null;
+  private frameTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly reducedMotion =
+    typeof matchMedia === 'function' &&
+    matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private volumeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Громкость применяется к элементу, только когда тот уже в DOM. */
+  private readonly savedVolume = signal<{ volume: number; muted: boolean } | null>(
+    null
+  );
 
   constructor() {
+    void this.settings
+      .getUpscale()
+      .then((mode) => this.upscaleMode.set(mode));
+
+    void this.settings
+      .getVolume()
+      .then((setting) => this.savedVolume.set(setting))
+      .catch(() => undefined);
+
+    // Элемент видео и сохранённая громкость появляются в разном порядке —
+    // применяем, когда есть оба. Дальше громкость меняет только человек.
+    effect(() => {
+      const video = this.videoRef()?.nativeElement;
+      const setting = this.savedVolume();
+
+      if (video && setting) {
+        video.volume = setting.volume;
+        video.muted = setting.muted;
+      }
+    });
+
+    // Апскейл пересобирается и при смене режима, и при смене потока: после
+    // переролва или другого качества в DOM уже другой кадр, а конвейер
+    // WebGPU привязан к прежним размерам.
+    effect(() => {
+      const mode = this.upscaleMode();
+      const ready = this.status() === 'ready';
+      this.manifestGeneration();
+
+      untracked(() => void this.applyUpscale(mode, ready));
+    });
+
+    // Заставка крутится, пока её видно. Новый набор кадров (другая серия)
+    // начинается с первого — там кадры именно этой серии.
+    effect(() => {
+      this.frames();
+      untracked(() => {
+        this.frameIndex.set(0);
+        this.brokenFrames.set(new Set());
+      });
+    });
+
+    effect(() => {
+      const cycling =
+        this.showFrames() &&
+        this.visibleFrames().length > 1 &&
+        !this.reducedMotion;
+
+      untracked(() =>
+        cycling ? this.startFrameCycle() : this.stopFrameCycle()
+      );
+    });
+
+    // Источник выбирается на смене серии и дальше не меняется: докачавшаяся
+    // посреди просмотра серия не должна перезапускать воспроизведение с диска.
     effect(() => {
       const url = this.iframeUrl();
 
       untracked(() => {
+        const localPath = this.localPath();
+        this.cancelAutoNext();
+        this.playedOnce.set(false);
         this.skipController = new SkipController(
           this.skips(),
           this.isLastEpisode()
@@ -139,7 +367,8 @@ export class VideoPlayerComponent {
         void this.load(
           url,
           this.requestedQuality(),
-          this.startPositionSecs()
+          this.startPositionSecs(),
+          localPath
         );
       });
     });
@@ -165,7 +394,21 @@ export class VideoPlayerComponent {
     inject(DestroyRef).onDestroy(() => {
       this.emitPausedProgress();
       unlisten?.();
-      this.hideTimer !== null && clearTimeout(this.hideTimer);
+      if (this.hideTimer !== null) {
+        clearTimeout(this.hideTimer);
+      }
+
+      if (this.clickTimer !== null) {
+        clearTimeout(this.clickTimer);
+      }
+
+      if (this.volumeTimer !== null) {
+        clearTimeout(this.volumeTimer);
+      }
+
+      this.cancelAutoNext();
+      this.stopFrameCycle();
+      this.stopUpscale();
       this.teardown();
     });
   }
@@ -175,13 +418,19 @@ export class VideoPlayerComponent {
   private async load(
     iframeUrl: string,
     quality: number,
-    positionSecs: number
+    positionSecs: number,
+    localPath: string | null = null
   ): Promise<void> {
     const token = ++this.generation;
 
     this.status.set('resolving');
     this.errorText.set('');
     this.skipHint.set(null);
+
+    if (localPath) {
+      await this.loadLocal(token, localPath, positionSecs, iframeUrl);
+      return;
+    }
 
     try {
       const manifest = await this.resolver.resolveManifest(iframeUrl, quality);
@@ -198,6 +447,59 @@ export class VideoPlayerComponent {
     }
   }
 
+  /**
+   * Файл с диска. Доступ к нему asset-протоколу выдаёт Rust поштучно — см.
+   * `allow_playback`. `crossOrigin` обязателен: без него кадр считается чужим,
+   * и апскейл не сможет его прочитать; asset-протокол отвечает нужным CORS.
+   */
+  private async loadLocal(
+    token: number,
+    path: string,
+    positionSecs: number,
+    iframeUrl: string
+  ): Promise<void> {
+    try {
+      await invoke('allow_playback', { path });
+    } catch (error: unknown) {
+      if (token === this.generation) {
+        this.fail(String(error));
+      }
+      return;
+    }
+
+    const video = this.videoRef()?.nativeElement;
+    if (token !== this.generation || !video) {
+      return;
+    }
+
+    this.detachCurrent();
+    this.isLocal.set(true);
+    this.manifestUrl = '';
+    this.playbackIframeUrl = iframeUrl;
+    this.actualQuality.set(null);
+
+    video.crossOrigin = 'anonymous';
+    video.addEventListener(
+      'loadedmetadata',
+      () => {
+        if (token === this.generation) {
+          this.onReady(video, positionSecs);
+        }
+      },
+      { once: true }
+    );
+    video.src = convertFileSrc(path);
+    this.startTicker();
+  }
+
+  /** До destroy старый поток ещё хранит честную позицию — сохраняем её. */
+  private detachCurrent(): void {
+    // Событие pause после уничтожения MediaSource уже может принести 0/0.
+    this.emitPausedProgress();
+    this.playbackReady = false;
+    this.destroyHls();
+  }
+
   private attach(
     manifestUrl: string,
     positionSecs: number,
@@ -208,11 +510,15 @@ export class VideoPlayerComponent {
       return;
     }
 
-    // До destroy старый поток ещё хранит честную позицию. Событие pause после
-    // уничтожения MediaSource уже может принести 0/0.
-    this.emitPausedProgress();
-    this.playbackReady = false;
-    this.destroyHls();
+    this.detachCurrent();
+
+    // Файл с диска оставил бы src и CORS-режим, а hls.js подставляет свой
+    // MediaSource и о прошлом источнике не знает.
+    if (this.isLocal()) {
+      this.isLocal.set(false);
+      video.removeAttribute('src');
+      video.removeAttribute('crossorigin');
+    }
 
     this.manifestUrl = manifestUrl;
     this.playbackIframeUrl = iframeUrl;
@@ -443,14 +749,34 @@ export class VideoPlayerComponent {
 
   onVolumeChange(): void {
     const video = this.videoRef()?.nativeElement;
-    if (video) {
-      this.volume.set(video.volume);
-      this.muted.set(video.muted);
+    if (!video) {
+      return;
+    }
+
+    this.volume.set(video.volume);
+    this.muted.set(video.muted);
+
+    if (this.volumeTimer !== null) {
+      clearTimeout(this.volumeTimer);
+    }
+
+    const setting = { volume: video.volume, muted: video.muted };
+    this.volumeTimer = setTimeout(() => {
+      this.volumeTimer = null;
+      void this.settings.setVolume(setting).catch(() => undefined);
+    }, VOLUME_SAVE_MS);
+  }
+
+  /** У HLS свои ошибки через hls.js, а у файла с диска других сигналов нет. */
+  onVideoError(): void {
+    if (this.isLocal() && this.status() !== 'error') {
+      this.fail('Не удалось воспроизвести файл с диска.');
     }
   }
 
   onEnded(): void {
     this.paused.set(true);
+    this.startAutoNext();
     const video = this.videoRef()?.nativeElement;
     this.ended.emit({
       iframeUrl: this.playbackIframeUrl,
@@ -460,6 +786,16 @@ export class VideoPlayerComponent {
           ? video.duration
           : this.duration(),
     });
+  }
+
+  onPlay(): void {
+    this.paused.set(false);
+    this.playedOnce.set(true);
+    this.pokeControls();
+
+    if (this.playbackIframeUrl) {
+      this.playbackStarted.emit(this.playbackIframeUrl);
+    }
   }
 
   onPause(): void {
@@ -489,6 +825,27 @@ export class VideoPlayerComponent {
 
   // ——— управление ———
 
+  /** Клик по кадру: воспроизведение, но с оглядкой на возможный двойной. */
+  onVideoClick(): void {
+    if (this.clickTimer !== null) {
+      return;
+    }
+
+    this.clickTimer = setTimeout(() => {
+      this.clickTimer = null;
+      this.togglePlay();
+    }, DOUBLE_CLICK_MS);
+  }
+
+  onVideoDoubleClick(): void {
+    if (this.clickTimer !== null) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+
+    void this.toggleFullscreen();
+  }
+
   togglePlay(): void {
     const video = this.videoRef()?.nativeElement;
     if (!video) {
@@ -501,6 +858,75 @@ export class VideoPlayerComponent {
     } else {
       video.pause();
     }
+  }
+
+  async changeUpscale(mode: UpscaleMode): Promise<void> {
+    if (mode === this.upscaleMode()) {
+      return;
+    }
+
+    this.upscaleMode.set(mode);
+    await this.settings.setUpscale(mode);
+  }
+
+  private async applyUpscale(mode: UpscaleMode, ready: boolean): Promise<void> {
+    // Запуск асинхронный: пока ждём адаптер и шейдеры, режим успевают
+    // переключить ещё раз. Без метки оба запуска дожили бы до конца и рисовали
+    // бы в одну канву, а остановить удалось бы только последний.
+    const token = ++this.upscaleToken;
+
+    this.stopUpscale();
+    this.upscaleError.set('');
+    this.upscaleStats.set(null);
+
+    const video = this.videoRef()?.nativeElement;
+    const canvas = this.canvasRef()?.nativeElement;
+
+    if (mode === 'off' || !ready || !video || !canvas) {
+      return;
+    }
+
+    try {
+      const handle = await startUpscale({
+        video,
+        canvas,
+        mode,
+        onStats: (stats) => {
+          if (token === this.upscaleToken) {
+            this.upscaleStats.set(stats);
+          }
+        },
+        onError: (message) => {
+          // Цикл уже остановился сам; здесь остаётся показать причину и
+          // погасить канву, чтобы под ней снова было видно обычное видео.
+          if (token === this.upscaleToken) {
+            this.upscaleError.set(message);
+            this.upscaleStats.set(null);
+          }
+        },
+      });
+
+      if (token !== this.upscaleToken) {
+        handle.destroy();
+        return;
+      }
+
+      this.upscaler = handle;
+    } catch (error: unknown) {
+      // Молча откатываться нельзя: человек включил режим и должен понять,
+      // почему картинка не изменилась.
+      if (token === this.upscaleToken) {
+        this.upscaleError.set(
+          error instanceof Error ? error.message : 'Апскейл не запустился'
+        );
+      }
+    }
+  }
+
+  private stopUpscale(): void {
+    this.upscaler?.destroy();
+    this.upscaler = null;
+    this.upscaleStats.set(null);
   }
 
   // ——— видимость панели ———
@@ -609,8 +1035,122 @@ export class VideoPlayerComponent {
     void this.load(
       this.iframeUrl(),
       this.requestedQuality(),
-      this.position()
+      this.position(),
+      this.localPath()
     );
+  }
+
+  // ——— заставка ———
+
+  /** Ручной выбор кадра перезапускает таймер, чтобы кадр не сменился сразу. */
+  showFrame(index: number): void {
+    this.frameIndex.set(index);
+
+    if (this.frameTimer !== null) {
+      this.startFrameCycle();
+    }
+  }
+
+  onFrameError(url: string): void {
+    this.brokenFrames.update((broken) => new Set([...broken, url]));
+  }
+
+  private startFrameCycle(): void {
+    this.stopFrameCycle();
+    this.frameTimer = setInterval(() => {
+      const count = this.visibleFrames().length;
+      if (count > 0) {
+        this.frameIndex.update((index) => (index + 1) % count);
+      }
+    }, FRAME_INTERVAL_MS);
+  }
+
+  private stopFrameCycle(): void {
+    if (this.frameTimer !== null) {
+      clearInterval(this.frameTimer);
+      this.frameTimer = null;
+    }
+  }
+
+  // ——— следующая серия ———
+
+  /**
+   * После конца серии — отсчёт до следующей, а не мгновенный переход: человек
+   * мог досматривать титры или собирался закрыть плеер.
+   */
+  private startAutoNext(): void {
+    if (this.isLastEpisode()) {
+      return;
+    }
+
+    this.cancelAutoNext();
+    this.autoNextSecs.set(AUTO_NEXT_SECS);
+    this.autoNextTimer = setInterval(() => {
+      const left = (this.autoNextSecs() ?? 0) - 1;
+
+      if (left > 0) {
+        this.autoNextSecs.set(left);
+        return;
+      }
+
+      this.goNext();
+    }, 1000);
+  }
+
+  cancelAutoNext(): void {
+    if (this.autoNextTimer !== null) {
+      clearInterval(this.autoNextTimer);
+      this.autoNextTimer = null;
+    }
+
+    this.autoNextSecs.set(null);
+  }
+
+  goNext(): void {
+    this.cancelAutoNext();
+
+    if (!this.isLastEpisode()) {
+      // Переход — осознанное продолжение просмотра, новая серия стартует сама.
+      this.hasStarted.set(true);
+      this.nextEpisode.emit();
+    }
+  }
+
+  // ——— картинка в картинке ———
+
+  /**
+   * Апскейл в окно PiP не попадает: система показывает сам `<video>`, а не
+   * канву поверх него. Это ограничение ОС, а не недосмотр.
+   */
+  async togglePip(): Promise<void> {
+    const video = this.videoRef()?.nativeElement as WebKitVideo | undefined;
+    if (!video || !this.pipSupported) {
+      return;
+    }
+
+    try {
+      if (document.pictureInPictureEnabled) {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+        } else {
+          await video.requestPictureInPicture();
+        }
+        return;
+      }
+
+      video.webkitSetPresentationMode?.(
+        video.webkitPresentationMode === 'picture-in-picture'
+          ? 'inline'
+          : 'picture-in-picture'
+      );
+    } catch {
+      // Вебвью отказал (например, метаданные ещё не пришли) — кнопка просто
+      // ничего не делает, как и системная.
+    }
+  }
+
+  toggleHelp(): void {
+    this.helpOpen.update((open) => !open);
   }
 
   /** Опенинг перематывается внутри серии, конец — уводит на следующую. */
@@ -620,7 +1160,7 @@ export class VideoPlayerComponent {
       return;
     }
 
-    this.nextEpisode.emit();
+    this.goNext();
   }
 
   /**
@@ -646,7 +1186,18 @@ export class VideoPlayerComponent {
   // ——— клавиатура ———
 
   onKeydown(event: KeyboardEvent): void {
-    const handled = this.handleKey(event.key);
+    // Пробел и Enter на сфокусированной кнопке панели нажимают её, а не
+    // ставят паузу: иначе с клавиатуры не нажать ни одну кнопку плеера.
+    const target = event.target as HTMLElement | null;
+    if (
+      (event.key === ' ' || event.key === 'Enter') &&
+      target !== event.currentTarget &&
+      target?.matches('button, summary, input')
+    ) {
+      return;
+    }
+
+    const handled = this.handleKey(event);
 
     if (handled) {
       // Иначе пробел прокрутит страницу, а стрелки уедут по полосе серий.
@@ -655,11 +1206,38 @@ export class VideoPlayerComponent {
     }
   }
 
-  private handleKey(key: string): boolean {
-    switch (key) {
+  private handleKey(event: KeyboardEvent): boolean {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      // Cmd+F, Cmd+M и прочие системные сочетания — не наши.
+      return false;
+    }
+
+    // «?» на разных раскладках живёт на разных клавишах, поэтому по символу.
+    if (event.key === '?') {
+      this.toggleHelp();
+      return true;
+    }
+
+    switch (event.code) {
+      case 'KeyK':
+        this.togglePlay();
+        return true;
+      case 'KeyF':
+        void this.toggleFullscreen();
+        return true;
+      case 'KeyM':
+        this.toggleMuted();
+        return true;
+      case 'KeyP':
+        void this.togglePip();
+        return true;
+      case 'KeyN':
+        this.goNext();
+        return true;
+    }
+
+    switch (event.key) {
       case ' ':
-      case 'k':
-      case 'K':
         this.togglePlay();
         return true;
       case 'ArrowRight':
@@ -674,15 +1252,17 @@ export class VideoPlayerComponent {
       case 'ArrowDown':
         this.setVolume(this.volume() - VOLUME_STEP);
         return true;
-      case 'f':
-      case 'F':
-        void this.toggleFullscreen();
-        return true;
-      case 'm':
-      case 'M':
-        this.toggleMuted();
-        return true;
       case 'Escape':
+        if (this.helpOpen()) {
+          this.helpOpen.set(false);
+          return true;
+        }
+
+        if (this.autoNextSecs() !== null) {
+          this.cancelAutoNext();
+          return true;
+        }
+
         if (!this.isFullscreen()) {
           return false;
         }
@@ -721,14 +1301,34 @@ export class VideoPlayerComponent {
     }
   }
 
+  /** Наведение на полосу: подсказка со временем в точке под курсором. */
+  hoverSeek(event: PointerEvent, bar: HTMLElement): void {
+    const duration = this.duration();
+    if (duration <= 0) {
+      return;
+    }
+
+    const ratio = this.ratioAt(event, bar);
+    this.hoverPercent.set(ratio * 100);
+    this.hoverSecs.set(ratio * duration);
+  }
+
+  clearHover(): void {
+    this.hoverSecs.set(null);
+  }
+
+  private ratioAt(event: PointerEvent, bar: HTMLElement): number {
+    const box = bar.getBoundingClientRect();
+
+    return Math.min(Math.max((event.clientX - box.left) / box.width, 0), 1);
+  }
+
   private scrub(event: PointerEvent, bar: HTMLElement): void {
     const duration = this.duration();
     if (duration <= 0) {
       return;
     }
 
-    const box = bar.getBoundingClientRect();
-    const ratio = (event.clientX - box.left) / box.width;
-    this.seekTo(Math.min(Math.max(ratio, 0), 1) * duration);
+    this.seekTo(this.ratioAt(event, bar) * duration);
   }
 }

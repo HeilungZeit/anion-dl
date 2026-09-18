@@ -42,7 +42,12 @@
       [class.catalog-list--stale]="isRefreshing()"
     >
       @if (results.error()) {
-        <p class="state state--error">Не удалось загрузить каталог: {{ results.error()?.message }}</p>
+        <app-load-error
+          title="Не удалось загрузить каталог"
+          [message]="results.error()?.message"
+          [offlineHint]="true"
+          (retry)="results.reload()"
+        />
       } @else if (pageItems(); as list) {
         @for (anime of list; track anime.animeId) {
           <app-anime-card

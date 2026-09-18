@@ -1,9 +1,11 @@
 @if (similar.isLoading()) {
   <tui-loader size="l" />
 } @else if (similar.error()) {
-  <p class="state state--error">
-    Не удалось загрузить похожие: {{ similar.error()?.message }}
-  </p>
+  <app-load-error
+    title="Не удалось загрузить похожие"
+    [message]="similar.error()?.message"
+    (retry)="similar.reload()"
+  />
 } @else if (similar.value(); as list) {
   @if (list.length === 0) {
     <p class="state">Похожих тайтлов не нашлось.</p>
