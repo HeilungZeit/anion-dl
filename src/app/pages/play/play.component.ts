@@ -17,6 +17,7 @@ import {
   type PlaybackProgress,
   VideoPlayerComponent,
 } from '../../player/video-player.component';
+import { PlayerWindowService } from '../../windows/player-window.service';
 
 /**
  * Просмотр скачанной серии без сети.
@@ -37,6 +38,7 @@ export class PlayComponent {
   private readonly localProgress = inject(WatchProgressService);
   private readonly remoteProgress = inject(RemoteWatchProgressService);
   private readonly users = inject(UserService);
+  private readonly playerWindows = inject(PlayerWindowService);
   private readonly router = inject(Router);
 
   readonly taskId = input.required<string>();
@@ -80,6 +82,10 @@ export class PlayComponent {
     const index = list.findIndex((item) => item.id === this.taskId());
     return index >= 0 ? (list[index + 1] ?? null) : null;
   });
+
+  readonly detachRoute = computed(
+    () => `/window/player?task=${encodeURIComponent(this.taskId())}`
+  );
 
   readonly startPositionSecs = computed(() => {
     const task = this.task();
@@ -143,6 +149,16 @@ export class PlayComponent {
     if (task && task.animeId && userId !== undefined) {
       this.remoteProgress.markWatched(task.animeId, userId, Number(task.episode));
     }
+  }
+
+  /** Скачанная серия уезжает в своё окно; страница остаётся на паузе. */
+  detachToWindow(route: string): void {
+    const task = this.task();
+    const title = task
+      ? `${task.title} · ${task.episode} серия`
+      : 'Anion Flow';
+
+    void this.playerWindows.open(route, title).catch(() => undefined);
   }
 
   goNext(): void {

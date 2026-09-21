@@ -1,9 +1,13 @@
 import { computed, Injectable, signal } from '@angular/core';
+import { emit, listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LazyStore } from '@tauri-apps/plugin-store';
 
 import type { Poster } from './anime.types';
 
 const STORE_FILE = 'watch-progress.json';
+/** Наблюдение плеера, разосланное остальным окнам. */
+const SHARE_EVENT = 'watch-progress://update';
 const RECORDS_KEY = 'records';
 const SAVE_DEBOUNCE_MS = 2_000;
 const MAX_RECORDS = 500;
@@ -42,6 +46,19 @@ export type WatchProgressUpdate = Omit<
   WatchRecord,
   'finished' | 'updatedAt'
 >;
+
+/**
+ * Одно наблюдение, разосланное по окнам.
+ *
+ * Передаётся именно обновление, а не снимок истории: снимок памяти одного окна
+ * затёр бы записи, сделанные в другом.
+ */
+interface SharedWatchProgress {
+  /** Ярлык окна-источника: собственное эхо игнорируется. */
+  source: string;
+  update: StoredWatchProgressUpdate;
+  updatedAt: number;
+}
 
 type StoredWatchProgressUpdate = WatchProgressUpdate &
   Partial<Pick<WatchRecord, 'finished'>>;
@@ -243,6 +260,7 @@ export class WatchProgressService {
   private readonly store = new LazyStore(STORE_FILE);
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveChain = Promise.resolve();
+  private readonly windowLabel = getCurrentWindow().label;
 
   readonly records = signal<WatchRecord[]>([]);
   readonly isInitialized = signal(false);
@@ -252,11 +270,39 @@ export class WatchProgressService {
 
   constructor() {
     void this.restore().catch(() => undefined);
+
+    // Серия может играть в отдельном окне, а ряд «Продолжить смотреть» —
+    // висеть в главном. Каждое окно Tauri держит свой экземпляр сервиса, и
+    // без этой подписки ряд обновился бы только после перезапуска.
+    void listen<SharedWatchProgress>(SHARE_EVENT, ({ payload }) => {
+      if (payload.source === this.windowLabel) {
+        return;
+      }
+
+      this.records.update((records) =>
+        mergeWatchProgress(records, payload.update, payload.updatedAt)
+      );
+    });
   }
 
+  /**
+   * Файл пишет только то окно, где серия играет: два окна, сохраняющие каждое
+   * свой снимок истории, затирали бы записи друг друга. Остальные окна лишь
+   * обновляют память — им хватает разосланного наблюдения.
+   */
   record(update: WatchProgressUpdate): void {
-    this.records.update((records) => mergeWatchProgress(records, update));
+    const updatedAt = Date.now();
+
+    this.records.update((records) =>
+      mergeWatchProgress(records, update, updatedAt)
+    );
     this.scheduleSave();
+
+    void emit(SHARE_EVENT, {
+      source: this.windowLabel,
+      update,
+      updatedAt,
+    } satisfies SharedWatchProgress).catch(() => undefined);
   }
 
   /** Любая сохранённая позиция продолжается; завершённая серия начинается заново. */

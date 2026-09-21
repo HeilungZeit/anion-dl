@@ -1,0 +1,111 @@
+<div class="shell">
+  <nav class="nav">
+    <div class="nav__inner">
+      <a class="brand" routerLink="/" aria-label="Anion Flow — главная">
+        <img src="assets/app-icon.png" alt="" />
+        <span>Anion<span class="brand__suffix">Flow</span></span>
+      </a>
+
+      <div class="nav__links">
+        <a
+          class="nav__link"
+          routerLink="/"
+          routerLinkActive="nav__link--active"
+          [routerLinkActiveOptions]="{ exact: true }"
+          >Главная</a
+        >
+        <a
+          class="nav__link"
+          routerLink="/catalog"
+          routerLinkActive="nav__link--active"
+          >Каталог</a
+        >
+        <a
+          class="nav__link"
+          routerLink="/seasons"
+          routerLinkActive="nav__link--active"
+          >Сезоны</a
+        >
+        <a
+          class="nav__link"
+          routerLink="/schedule"
+          routerLinkActive="nav__link--active"
+          >Расписание</a
+        >
+        <a
+          class="nav__link"
+          routerLink="/bookmarks"
+          routerLinkActive="nav__link--active"
+          >Закладки</a
+        >
+        <a
+          class="nav__link"
+          routerLink="/downloads"
+          routerLinkActive="nav__link--active"
+          >Загрузки
+          @if (pendingCount() > 0) {
+            <span class="nav__badge" aria-label="Активных загрузок">{{
+              pendingCount()
+            }}</span>
+          }
+        </a>
+      </div>
+
+      <a
+        class="nav__catalog"
+        routerLink="/search"
+        routerLinkActive="nav__catalog--active"
+        aria-label="Найти аниме"
+      >
+        <tui-icon icon="@tui.search" />
+        <span>Найти аниме</span>
+        <kbd>/</kbd>
+      </a>
+
+      @if (!isInitialized()) {
+        <span class="account-skeleton" aria-hidden="true"></span>
+      } @else if (isAuthenticated()) {
+        <details class="account">
+          <summary class="account__trigger">
+            <span class="account__monogram" aria-hidden="true">{{
+              monogram()
+            }}</span>
+            <span class="account__name">{{ displayName() }}</span>
+          </summary>
+
+          <div class="account__menu">
+            <div class="account__identity">
+              <strong>{{ displayName() }}</strong>
+              <small>{{ email() }}</small>
+            </div>
+
+            <button
+              class="account__action"
+              type="button"
+              (click)="openProfile()"
+            >
+              <tui-icon icon="@tui.external-link" />
+              <span>Профиль на сайте</span>
+            </button>
+
+            <button class="account__action" type="button" (click)="logout()">
+              <tui-icon icon="@tui.log-out" />
+              <span>Выйти</span>
+            </button>
+          </div>
+        </details>
+      } @else {
+        <a
+          class="account__login"
+          routerLink="/login"
+          routerLinkActive="account__login--active"
+          >Войти</a
+        >
+      }
+    </div>
+  </nav>
+
+  <main class="content">
+    <router-outlet />
+  </main>
+</div>

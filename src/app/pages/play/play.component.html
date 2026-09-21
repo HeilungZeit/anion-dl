@@ -34,6 +34,8 @@
         [localPath]="current.outputPath"
         [poster]="current.poster?.big ?? ''"
         [startPositionSecs]="startPositionSecs()"
+        [detachRoute]="detachRoute()"
+        (detach)="detachToWindow($event)"
         (ended)="markEnded($event)"
         (nextEpisode)="goNext()"
         (playbackPaused)="saveAndFlush($event)"

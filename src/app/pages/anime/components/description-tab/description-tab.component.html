@@ -101,6 +101,8 @@
           [poster]="preview()"
           [skips]="episode.skips"
           [startPositionSecs]="startPositionSecs()"
+          [detachRoute]="detachRoute()"
+          (detach)="detachToWindow($event)"
           (ended)="markEnded($event)"
           (nextEpisode)="goToNextEpisode()"
           (playbackPaused)="saveAndFlush($event)"

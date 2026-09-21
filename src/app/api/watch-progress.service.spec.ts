@@ -56,6 +56,40 @@ describe('watch progress policy', () => {
     expect(rewound[0]?.positionSecs).toBe(10);
   });
 
+  // Окно плеера и главное окно — два разных экземпляра сервиса, и каждое
+  // прогоняет через эту функцию чужие наблюдения. Слияние по одному
+  // обновлению должно давать тот же результат, что и просмотр в одном окне.
+  test('наблюдения из двух окон не затирают друг друга', () => {
+    const fromPlayerWindow = mergeWatchProgress(
+      [],
+      { ...update, episode: 5, positionSecs: 300, durationSecs: 1400 },
+      10
+    );
+    const fromMainWindow = mergeWatchProgress(
+      fromPlayerWindow,
+      { ...update, episode: 2, positionSecs: 60, durationSecs: 1400 },
+      11
+    );
+
+    expect(fromMainWindow).toHaveLength(2);
+    expect(
+      fromMainWindow.find((item) => item.episode === 5)?.positionSecs
+    ).toBe(300);
+  });
+
+  test('позднее наблюдение той же серии продвигает позицию', () => {
+    const earlier = mergeWatchProgress([], update, 10);
+    const later = mergeWatchProgress(
+      earlier,
+      { ...update, positionSecs: 70 },
+      11
+    );
+
+    expect(later).toHaveLength(1);
+    expect(later[0]?.positionSecs).toBe(70);
+    expect(later[0]?.updatedAt).toBe(11);
+  });
+
   test('position is clamped to duration', () => {
     const result = mergeWatchProgress([], {
       ...update,

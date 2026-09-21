@@ -42,6 +42,15 @@ export const routes: Routes = [
       import('./pages/play/play.component').then((m) => m.PlayComponent),
   },
   {
+    // Единственный маршрут окна плеера: серия без страницы вокруг неё.
+    path: 'window/player',
+    title: 'Просмотр — Anion Flow',
+    loadComponent: () =>
+      import('./pages/window-player/window-player.component').then(
+        (m) => m.WindowPlayerComponent
+      ),
+  },
+  {
     path: 'bookmarks',
     redirectTo: 'bookmarks/watching',
     pathMatch: 'full',

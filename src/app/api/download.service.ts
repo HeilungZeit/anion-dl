@@ -5,6 +5,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { LazyStore } from '@tauri-apps/plugin-store';
 
 import { DEFAULT_QUALITY } from '../player/manifest-quality';
+import { currentWindowTarget } from '../windows/current-window';
 import {
   ensureNoticePermission,
   notifyIfAway,
@@ -126,6 +127,17 @@ export class DownloadService {
    * шанс потерять сегмент — ради выигрыша, которого нет: упирается всё в сеть.
    */
   private running = false;
+
+  /**
+   * Очередь принадлежит окну `main`.
+   *
+   * Флаг `running` живёт в памяти одного вебвью, а каждое окно Tauri — это
+   * отдельный экземпляр Angular со своим `DownloadService`. Без этой проверки
+   * открытое окно плеера подняло бы второй ffmpeg на ту же задачу и тот же
+   * файл. Остальным окнам остаётся чтение: список задач и прогресс приходят
+   * из Rust событием и сходятся везде сами.
+   */
+  private readonly ownsQueue = currentWindowTarget().kind === 'shell';
 
   constructor() {
     // Прогресс приходит из Rust потоком по всем задачам сразу, поэтому
@@ -329,7 +341,7 @@ export class DownloadService {
    * безопасен: флаг running гарантирует единственного обработчика.
    */
   private async drain(): Promise<void> {
-    if (this.running) {
+    if (this.running || !this.ownsQueue) {
       return;
     }
 
@@ -425,7 +437,10 @@ export class DownloadService {
 
     this.restored.set(true);
     void this.refreshFiles();
-    void this.drain();
+
+    if (this.ownsQueue) {
+      void this.drain();
+    }
   }
 
   private async persist(): Promise<void> {

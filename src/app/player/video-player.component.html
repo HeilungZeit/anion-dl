@@ -2,6 +2,7 @@
   class="player"
   tabindex="0"
   [class.player--fullscreen]="isFullscreen()"
+  [class.player--window]="isPlayerWindow"
   [class.player--idle]="!controlsVisible()"
   (keydown)="onKeydown($event)"
   (pointerleave)="hideControlsSoon()"
@@ -295,7 +296,7 @@
             title="Картинка в картинке (P)"
             (click)="togglePip()"
           >
-            <tui-icon icon="@tui.picture-in-picture-2" />
+            <tui-icon icon="@tui.square-arrow-out-up-right" />
           </button>
         }
 
@@ -309,6 +310,18 @@
         >
           <tui-icon icon="@tui.keyboard" />
         </button>
+
+        @if (canDetach()) {
+          <button
+            class="ghost ghost--icon"
+            type="button"
+            aria-label="Открыть в отдельном окне"
+            title="Открыть в отдельном окне"
+            (click)="detachToWindow()"
+          >
+            <tui-icon icon="@tui.picture-in-picture-2" />
+          </button>
+        }
 
         <button
           class="ghost ghost--icon"

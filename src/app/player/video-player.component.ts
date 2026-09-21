@@ -14,11 +14,13 @@ import {
 } from '@angular/core';
 import { TuiIcon } from '@taiga-ui/core';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Hls, { type ErrorData, type HlsConfig } from 'hls.js';
 
 import type { VideoSkips } from '../api/anime.types';
 import { ResolverService } from '../api/resolver.service';
+import { currentWindowTarget } from '../windows/current-window';
 import { AutoCloseMenuDirective } from './auto-close-menu.directive';
 import { DEFAULT_QUALITY, QUALITIES, qualityOf } from './manifest-quality';
 import { PlayerSettingsService } from './player-settings.service';
@@ -45,6 +47,9 @@ type PlayerStatus = 'resolving' | 'ready' | 'error';
 
 /** Как часто тикает служебный опрос: позиция, прогресс, срок подписи. */
 const TICK_MS = 500;
+const IS_PLAYER_WINDOW = currentWindowTarget().kind === 'player';
+/** Воспроизведение началось в каком-то из окон. */
+const PLAYBACK_EVENT = 'player://started';
 
 const SEEK_STEP_SECS = 10;
 
@@ -162,6 +167,14 @@ export class VideoPlayerComponent {
    */
   readonly startPositionSecs = input(0);
 
+  /**
+   * Маршрут этой серии для отдельного окна. `null` — кнопки «оторвать» нет:
+   * так на странице, которая маршрут назвать не может, и во всяком окне,
+   * которое само и есть окно плеера.
+   */
+  readonly detachRoute = input<string | null>(null);
+
+  readonly detach = output<string>();
   readonly progress = output<PlaybackProgress>();
   readonly ended = output<PlaybackProgress>();
   readonly nextEpisode = output<void>();
@@ -171,6 +184,14 @@ export class VideoPlayerComponent {
    * повторы отсекает получатель, а плееру незачем помнить, что уже сообщал.
    */
   readonly playbackStarted = output<string>();
+
+  /** Своё окно плеер занимает целиком; на странице — как встанет. */
+  readonly isPlayerWindow = IS_PLAYER_WINDOW;
+
+  /** В самом окне плеера отрывать нечего: серия уже в отдельном окне. */
+  readonly canDetach = computed(
+    () => this.detachRoute() !== null && !IS_PLAYER_WINDOW
+  );
 
   readonly status = signal<PlayerStatus>('resolving');
   readonly errorText = signal('');
@@ -280,7 +301,10 @@ export class VideoPlayerComponent {
   private hls: Hls | null = null;
   private manifestUrl = '';
   private playbackIframeUrl = '';
+  private readonly windowLabel = getCurrentWindow().label;
   private playbackReady = false;
+  /** Снятие слушателя отложенной перемотки на стартовую позицию. */
+  private pendingSeek: (() => void) | null = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
   private skipController = new SkipController({});
   private readonly latch = new ReResolveOnForbidden();
@@ -384,6 +408,19 @@ export class VideoPlayerComponent {
     // бы растянутой поверх обычного окна.
     const window = getCurrentWindow();
     let unlisten: (() => void) | null = null;
+    let unlistenPlayback: (() => void) | null = null;
+
+    void listen<{ source: string }>(PLAYBACK_EVENT, ({ payload }) => {
+      if (payload.source === this.windowLabel) {
+        return;
+      }
+
+      this.videoRef()?.nativeElement.pause();
+    })
+      .then((stop) => {
+        unlistenPlayback = stop;
+      })
+      .catch(() => undefined);
 
     void window
       .onResized(() => {
@@ -400,6 +437,7 @@ export class VideoPlayerComponent {
     inject(DestroyRef).onDestroy(() => {
       this.emitPausedProgress();
       unlisten?.();
+      unlistenPlayback?.();
       if (this.hideTimer !== null) {
         clearTimeout(this.hideTimer);
       }
@@ -502,6 +540,7 @@ export class VideoPlayerComponent {
   private detachCurrent(): void {
     // Событие pause после уничтожения MediaSource уже может принести 0/0.
     this.emitPausedProgress();
+    this.cancelPendingSeek();
     this.playbackReady = false;
     this.buffering.set(false);
     this.destroyHls();
@@ -532,7 +571,7 @@ export class VideoPlayerComponent {
     this.actualQuality.set(qualityOf(manifestUrl));
 
     if (Hls.isSupported()) {
-      const hls = new Hls(this.hlsConfig());
+      const hls = new Hls(this.hlsConfig(positionSecs));
       this.hls = hls;
 
       hls.on(Hls.Events.ERROR, (_event, data) => this.onHlsError(data));
@@ -562,7 +601,7 @@ export class VideoPlayerComponent {
     );
   }
 
-  private hlsConfig(): Partial<HlsConfig> {
+  private hlsConfig(startPositionSecs: number): Partial<HlsConfig> {
     const base = Hls.DefaultConfig;
 
     // 403 означает протухшую подпись: она не оживёт, и ретраи вылились бы в
@@ -590,6 +629,10 @@ export class VideoPlayerComponent {
     });
 
     return {
+      // Продолжение с сохранённой секунды задаётся именно здесь. Выставлять
+      // currentTime по MANIFEST_PARSED поздно и бесполезно: длительности ещё
+      // нет, а hls.js всё равно начнёт загрузку со своей startPosition.
+      startPosition: startPositionSecs > 0 ? startPositionSecs : -1,
       // По умолчанию hls.js держит впереди лишь 30 с: на медленном CDN этого
       // не хватает, чтобы пережить провал скорости без остановки. Две минуты
       // вперёд — порядка 30–60 МБ при 720p; потолок в байтах поднят с 60 МБ,
@@ -607,10 +650,10 @@ export class VideoPlayerComponent {
 
   private onReady(video: HTMLVideoElement, positionSecs: number): void {
     this.status.set('ready');
-    this.duration.set(video.duration || 0);
+    this.duration.set(Number.isFinite(video.duration) ? video.duration : 0);
 
-    if (positionSecs > 0 && Number.isFinite(video.duration)) {
-      video.currentTime = Math.min(positionSecs, video.duration - 1);
+    if (positionSecs > 0) {
+      this.applyStartPosition(video, positionSecs);
     }
 
     this.playbackReady = true;
@@ -621,6 +664,44 @@ export class VideoPlayerComponent {
     if (this.hasStarted()) {
       void video.play().catch(() => undefined);
     }
+  }
+
+  /**
+   * MANIFEST_PARSED приходит раньше, чем MediaSource узнаёт длительность, и
+   * присвоение currentTime в этот момент молча пропадало — серия начиналась
+   * с нуля. Перемотка откладывается до метаданных, если их ещё нет.
+   */
+  private applyStartPosition(
+    video: HTMLVideoElement,
+    positionSecs: number
+  ): void {
+    this.cancelPendingSeek();
+
+    const seek = (): void => {
+      this.pendingSeek = null;
+
+      const duration = video.duration;
+      video.currentTime =
+        Number.isFinite(duration) && duration > 0
+          ? Math.min(positionSecs, Math.max(duration - 1, 0))
+          : positionSecs;
+      this.position.set(video.currentTime);
+    };
+
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      seek();
+      return;
+    }
+
+    video.addEventListener('loadedmetadata', seek, { once: true });
+    this.pendingSeek = () =>
+      video.removeEventListener('loadedmetadata', seek);
+  }
+
+  /** Отложенная перемотка старого потока не должна догнать новый. */
+  private cancelPendingSeek(): void {
+    this.pendingSeek?.();
+    this.pendingSeek = null;
   }
 
   private fail(message: string): void {
@@ -732,6 +813,7 @@ export class VideoPlayerComponent {
 
   private teardown(): void {
     this.stopTicker();
+    this.cancelPendingSeek();
     this.destroyHls();
   }
 
@@ -820,6 +902,13 @@ export class VideoPlayerComponent {
     this.resumeOffer.set(null);
     this.pokeControls();
 
+    // Серия может играть в нескольких окнах сразу — две звуковые дорожки в
+    // уши никому не нужны. Чужие плееры замолкают, а не закрываются: зритель
+    // вернётся к ним с той же секунды.
+    void emit(PLAYBACK_EVENT, { source: this.windowLabel }).catch(
+      () => undefined
+    );
+
     if (this.playbackIframeUrl) {
       this.playbackStarted.emit(this.playbackIframeUrl);
     }
@@ -872,6 +961,17 @@ export class VideoPlayerComponent {
     }
 
     void this.toggleFullscreen();
+  }
+
+  /** Серия уезжает в своё окно; здесь воспроизведение останавливается. */
+  detachToWindow(): void {
+    const route = this.detachRoute();
+    if (!route) {
+      return;
+    }
+
+    this.videoRef()?.nativeElement.pause();
+    this.detach.emit(route);
   }
 
   togglePlay(): void {

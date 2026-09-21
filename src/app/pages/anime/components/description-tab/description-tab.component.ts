@@ -33,6 +33,7 @@ import {
   VideoPlayerComponent,
 } from '../../../../player/video-player.component';
 import { orderPreviewFrames } from '../../../../player/preview-frames';
+import { PlayerWindowService } from '../../../../windows/player-window.service';
 import { CommentsComponent } from '../comments/comments.component';
 
 /** Субтитры и озвучки бэк отдаёт вперемешку, различаются только подписью. */
@@ -64,6 +65,7 @@ const SUBTITLES_PREFIX = 'субтитры';
 })
 export class DescriptionTabComponent {
   private readonly localProgress = inject(WatchProgressService);
+  private readonly playerWindows = inject(PlayerWindowService);
   private readonly remoteProgress = inject(RemoteWatchProgressService);
   private readonly users = inject(UserService);
   private readonly downloads = inject(DownloadService);
@@ -200,6 +202,26 @@ export class DescriptionTabComponent {
     () =>
       this.anime().randomScreenshots?.[0]?.sizes.full ?? this.anime().poster.big
   );
+
+  /**
+   * Маршрут выбранной серии для отдельного окна. Ведёт на `window/player`, а
+   * не на эту же страницу: в отдельном окне не нужны ни описание, ни вкладки,
+   * ни комментарии — нужен кадр.
+   */
+  readonly detachRoute = computed(() => {
+    const episode = this.selectedEpisode();
+    if (!episode) {
+      return null;
+    }
+
+    const params = new URLSearchParams([
+      ['anime', String(this.anime().animeId)],
+      ['episode', episode.number],
+      ['dubbing', episode.data.dubbing],
+    ]);
+
+    return `/window/player?${params.toString()}`;
+  });
 
   readonly startPositionSecs = computed(() => {
     const episode = this.selectedEpisode();
@@ -422,6 +444,16 @@ export class DescriptionTabComponent {
 
   isWatched(episode: Video): boolean {
     return this.watched().has(Number(episode.number));
+  }
+
+  /** Серия уезжает в своё окно; здесь она остаётся выбранной, но на паузе. */
+  detachToWindow(route: string): void {
+    const episode = this.selectedEpisode();
+    const title = episode
+      ? `${this.anime().title} · ${episode.number} серия`
+      : this.anime().title;
+
+    void this.playerWindows.open(route, title).catch(() => undefined);
   }
 
   goToNextEpisode(): void {

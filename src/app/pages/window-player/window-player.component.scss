@@ -1,0 +1,17 @@
+// Окно целиком отдано кадру: плеер сам растягивается по высоте хоста.
+:host {
+  display: block;
+  block-size: 100%;
+  background: #000;
+}
+
+.notice {
+  display: grid;
+  place-content: center;
+  block-size: 100%;
+  margin: 0;
+  padding: 24px;
+  color: #fff;
+  font: 400 15px/1.5 system-ui, sans-serif;
+  text-align: center;
+}

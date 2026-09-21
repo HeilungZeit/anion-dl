@@ -1,0 +1,24 @@
+@if (errorText(); as message) {
+  <p class="notice" role="alert">{{ message }}</p>
+} @else if (!ready()) {
+  <p class="notice" role="status">Открываю серию…</p>
+} @else if (isMissing()) {
+  <p class="notice" role="alert">
+    Файла больше нет на диске — возможно, его удалили или переместили.
+  </p>
+} @else {
+  <app-video-player
+    [frames]="frames()"
+    [iframeUrl]="iframeUrl()"
+    [isLastEpisode]="isLastEpisode()"
+    [localPath]="localPath()"
+    [poster]="poster()"
+    [skips]="skips()"
+    [startPositionSecs]="startPositionSecs()"
+    (ended)="markEnded($event)"
+    (nextEpisode)="goToNextEpisode()"
+    (playbackPaused)="saveAndFlush($event)"
+    (playbackStarted)="markWatched()"
+    (progress)="saveProgress($event)"
+  />
+}
