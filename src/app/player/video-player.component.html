@@ -249,6 +249,9 @@
                   <span class="quality__hint">{{ upscaleLabels[option].hint }}</span>
                 </button>
               }
+              @if (upscaleNote()) {
+                <p class="quality__note">{{ upscaleNote() }}</p>
+              }
               @if (upscaleError()) {
                 <p class="quality__note">{{ upscaleError() }}</p>
               } @else if (upscaleStats(); as stats) {

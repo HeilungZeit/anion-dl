@@ -1,5 +1,11 @@
 import type { Anime4KPipeline } from 'anime4k-webgpu';
 
+import {
+  createCompactRenderer,
+  fitsRealtime,
+  type CompactHandle,
+} from './compact/renderer';
+
 /**
  * Апскейл кадра через Anime4K на WebGPU.
  *
@@ -24,9 +30,12 @@ import type { Anime4KPipeline } from 'anime4k-webgpu';
  * `b`/`bb` убраны по другой причине: они восстанавливают замыленный источник, а
  * у Kodik картинка не замылена, а пережата — эти режимы её только размазывали.
  */
-export const UPSCALE_MODES = ['off', 'c', 'ca'] as const;
+export const UPSCALE_MODES = ['off', 'c', 'ca', 'compact'] as const;
 
 export type UpscaleMode = (typeof UPSCALE_MODES)[number];
+
+/** Режимы на шейдерах Anime4K — в отличие от `compact` со своей сетью. */
+type ShaderMode = Extract<UpscaleMode, 'c' | 'ca'>;
 
 export interface UpscaleLabel {
   /** Коротко — и в пункте меню, и на кнопке. */
@@ -44,6 +53,10 @@ export const UPSCALE_LABELS: Record<UpscaleMode, UpscaleLabel> = {
   ca: {
     title: 'Чёткость+',
     hint: 'Ещё и убирает артефакты сжатия, нагрузка чуть выше',
+  },
+  compact: {
+    title: 'Детали',
+    hint: 'Дорисовывает детали, а не только режет артефакты. Тяжёлый: на 720p может не успевать',
   },
 };
 
@@ -72,6 +85,17 @@ export interface UpscaleStats {
   targetHeight: number;
   /** Кадров в секунду, которые реально прошли через конвейер. */
   fps: number;
+  /**
+   * Частота самого видео — по счётчику показанных кадров из
+   * `requestVideoFrameCallback`.
+   *
+   * Без неё «мало кадров» не отличить от «ролик такой»: у Kodik попадается и
+   * 23.976, и 30, а сравнивать с константой 24 значит то объявлять просадку
+   * там, где её нет, то не замечать настоящую. Счётчик `presentedFrames`
+   * растёт по показанным кадрам независимо от того, успел ли наш цикл, —
+   * поэтому разрыв между ним и `fps` и есть мера отставания.
+   */
+  videoFps: number;
 }
 
 export function isWebGpuAvailable(): boolean {
@@ -172,10 +196,7 @@ interface BuildContext {
  * кратность и о цели ничего не знают. Поэтому размер канвы берётся не из
  * расчёта, а из выходной текстуры последнего звена — он единственный честный.
  */
-function buildChain(
-  mode: Exclude<UpscaleMode, 'off'>,
-  ctx: BuildContext
-): Anime4KPipeline[] {
+function buildChain(mode: ShaderMode, ctx: BuildContext): Anime4KPipeline[] {
   const { modules, device, inputTexture, nativeDimensions, targetDimensions } =
     ctx;
   const preset = { device, inputTexture, nativeDimensions, targetDimensions };
@@ -186,6 +207,47 @@ function buildChain(
     case 'ca':
       return [new modules.ModeCA(preset)];
   }
+}
+
+/**
+ * Устройство под режим.
+ *
+ * Для сети нужны две вещи, которых шейдерам Anime4K не требуется:
+ * half-точность (без неё сеть вдвое дороже и не влезает в кадр) и **явные
+ * лимиты**. Второе неочевидно: `requestDevice` без `requiredLimits` выдаёт
+ * дефолты спеки, а не максимумы адаптера — на этой машине 16 КБ общей памяти
+ * на группу вместо 32, и конвейер не проходил валидацию.
+ */
+async function requestDevice(
+  adapter: GPUAdapter,
+  needsNetwork: boolean
+): Promise<GPUDevice> {
+  if (!needsNetwork) {
+    return adapter.requestDevice();
+  }
+
+  if (!adapter.features.has('shader-f16')) {
+    throw new Error('Видеокарта не поддерживает половинную точность в шейдерах');
+  }
+
+  const limits = adapter.limits as unknown as Record<string, number | undefined>;
+  const wanted: Record<string, number> = {};
+
+  for (const name of [
+    'maxStorageBufferBindingSize',
+    'maxBufferSize',
+    'maxComputeWorkgroupStorageSize',
+  ]) {
+    const value = limits[name];
+    if (typeof value === 'number') {
+      wanted[name] = value;
+    }
+  }
+
+  return adapter.requestDevice({
+    requiredFeatures: ['shader-f16'],
+    requiredLimits: wanted,
+  });
 }
 
 /**
@@ -204,20 +266,26 @@ export async function startUpscale({
     throw new Error('WebGPU недоступен в этом вебвью');
   }
 
-  const modules = await loadPresets();
+  const network = mode === 'compact';
+
+  // Шейдеры Anime4K весят около 4 МБ и режиму сети не нужны вовсе.
+  const modules = network ? null : await loadPresets();
 
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) {
     throw new Error('Видеокарта не отдала адаптер WebGPU');
   }
 
-  const device = await adapter.requestDevice();
+  const device = await requestDevice(adapter, network);
   const context = canvas.getContext('webgpu');
   if (!context) {
     throw new Error('Канва не отдала контекст WebGPU');
   }
 
   const format = navigator.gpu.getPreferredCanvasFormat();
+  const compact: CompactHandle | null = network
+    ? await createCompactRenderer(device, format)
+    : null;
   context.configure({ device, format, alphaMode: 'opaque' });
 
   const sampler = device.createSampler({
@@ -269,6 +337,10 @@ export async function startUpscale({
   let framesInWindow = 0;
   let windowStartedAt = performance.now();
   let reported = false;
+  /** Счётчик показанных кадров на последнем обратном вызове. */
+  let presented = 0;
+  /** Он же на начало текущего окна измерения; null — окно ещё не началось. */
+  let presentedAtWindowStart: number | null = null;
 
   const release = (): void => {
     source?.destroy();
@@ -302,8 +374,6 @@ export async function startUpscale({
   const rebuild = (width: number, height: number): void => {
     release();
 
-    const targetDimensions = targetFor(width, height);
-
     source = device.createTexture({
       size: [width, height],
       format: 'rgba8unorm',
@@ -313,8 +383,36 @@ export async function startUpscale({
         GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    pipelines = buildChain(mode, {
-      modules,
+    if (compact) {
+      // Кратность у сети фиксированная, и цель от размера окна не зависит:
+      // растянуть готовый кадр дешевле, чем считать сеть на лишние пиксели.
+      if (!fitsRealtime(width, height)) {
+        throw new Error(
+          `Кадр ${width}×${height} слишком велик для этого режима`
+        );
+      }
+
+      compact.resize(width, height);
+      canvas.width = width * compact.scale;
+      canvas.height = height * compact.scale;
+
+      builtFor = `${width}x${height}@${canvas.width}x${canvas.height}`;
+      sizeDirty = false;
+      stats = {
+        sourceWidth: width,
+        sourceHeight: height,
+        targetWidth: canvas.width,
+        targetHeight: canvas.height,
+        fps: 0,
+        videoFps: 0,
+      };
+      return;
+    }
+
+    const targetDimensions = targetFor(width, height);
+
+    pipelines = buildChain(mode as ShaderMode, {
+      modules: modules as PresetModules,
       device,
       inputTexture: source,
       nativeDimensions: { width, height },
@@ -344,6 +442,7 @@ export async function startUpscale({
       targetWidth: output.width,
       targetHeight: output.height,
       fps: 0,
+      videoFps: 0,
     };
   };
 
@@ -395,7 +494,12 @@ export async function startUpscale({
       }
     }
 
-    if (!source || pipelines.length === 0 || !bindGroup || !stats) {
+    if (!source || !stats) {
+      return;
+    }
+
+    // У сети своя цепочка проходов, цепочки Anime4K и привязки блита нет.
+    if (!compact && (pipelines.length === 0 || !bindGroup)) {
       return;
     }
 
@@ -415,26 +519,32 @@ export async function startUpscale({
 
     const encoder = device.createCommandEncoder();
 
-    // Звенья пишутся в один энкодер по порядку: выход предыдущего — вход
-    // следующего, связано ещё при сборке цепочки.
-    for (const stage of pipelines) {
-      stage.pass(encoder);
-    }
+    if (compact) {
+      // Сеть сама доводит кадр до канвы: её выход лежит в буфере, а не в
+      // текстуре, и общий блит для него не годится.
+      compact.draw(encoder, source, context.getCurrentTexture().createView());
+    } else if (bindGroup) {
+      // Звенья пишутся в один энкодер по порядку: выход предыдущего — вход
+      // следующего, связано ещё при сборке цепочки.
+      for (const stage of pipelines) {
+        stage.pass(encoder);
+      }
 
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-        },
-      ],
-    });
-    pass.setPipeline(blit);
-    pass.setBindGroup(0, bindGroup);
-    pass.draw(3);
-    pass.end();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          },
+        ],
+      });
+      pass.setPipeline(blit);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+    }
 
     device.queue.submit([encoder.finish()]);
 
@@ -451,19 +561,35 @@ export async function startUpscale({
     const elapsed = now - windowStartedAt;
 
     if (elapsed >= 1000) {
+      // На паузе обратных вызовов нет, счётчик стоит — тогда считаем, что
+      // видео идёт ровно столько, сколько мы отрисовали, и просадки нет.
+      const shown =
+        presentedAtWindowStart === null
+          ? framesInWindow
+          : presented - presentedAtWindowStart;
+
       stats = {
         ...stats,
         fps: Math.round((framesInWindow * 1000) / elapsed),
+        videoFps: Math.round((Math.max(shown, framesInWindow) * 1000) / elapsed),
       };
+
       framesInWindow = 0;
+      presentedAtWindowStart = presented;
       windowStartedAt = now;
       onStats?.(stats);
     }
   };
 
-  const step = (): void => {
+  const step = (_now?: number, metadata?: VideoFrameCallbackMetadata): void => {
     if (disposed) {
       return;
+    }
+
+    // Опрос на паузе метаданных не приносит — счётчик тогда просто не растёт.
+    if (metadata) {
+      presented = metadata.presentedFrames;
+      presentedAtWindowStart ??= presented;
     }
 
     try {
@@ -519,6 +645,7 @@ export async function startUpscale({
       }
 
       release();
+      compact?.destroy();
       device.destroy();
     },
   };

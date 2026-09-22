@@ -36,6 +36,7 @@ import {
   type UpscaleMode,
   type UpscaleStats,
 } from './upscale';
+import { UpscaleFallback } from './upscale-fallback';
 
 export interface PlaybackProgress {
   iframeUrl: string;
@@ -276,6 +277,15 @@ export class VideoPlayerComponent {
   readonly upscaleError = signal('');
   readonly upscaleStats = signal<UpscaleStats | null>(null);
 
+  /**
+   * Почему режим сменился сам. Без этого откат неотличим от «само так вышло»:
+   * человек выбрал одно, видит другое и не понимает, почему.
+   */
+  readonly upscaleNote = signal('');
+
+  /** Следит, тянет ли железо выбранный режим. Подробности — в модуле. */
+  private readonly fallback = new UpscaleFallback();
+
   /** Растёт на каждой пересборке потока — сигнал апскейлу пересобраться. */
   private readonly manifestGeneration = signal(0);
   readonly upscaleActive = computed(
@@ -361,6 +371,16 @@ export class VideoPlayerComponent {
       this.manifestGeneration();
 
       untracked(() => void this.applyUpscale(mode, ready));
+    });
+
+    // Новая серия — прошлые решения автоматики к ней отношения не имеют:
+    // качество могло смениться, и то, что не тянуло на 720p, тянет на 480p.
+    effect(() => {
+      this.iframeUrl();
+      untracked(() => {
+        this.fallback.reset();
+        this.upscaleNote.set('');
+      });
     });
 
     // Заставка крутится, пока её видно. Новый набор кадров (другая серия)
@@ -1005,6 +1025,10 @@ export class VideoPlayerComponent {
       return;
     }
 
+    // Выбор руками старше автоматики: дальше она в эту серию не вмешивается.
+    this.fallback.release();
+    this.upscaleNote.set('');
+
     this.upscaleMode.set(mode);
     await this.settings.setUpscale(mode);
   }
@@ -1018,6 +1042,7 @@ export class VideoPlayerComponent {
     this.stopUpscale();
     this.upscaleError.set('');
     this.upscaleStats.set(null);
+    this.fallback.watch(mode);
 
     const video = this.videoRef()?.nativeElement;
     const canvas = this.canvasRef()?.nativeElement;
@@ -1032,8 +1057,18 @@ export class VideoPlayerComponent {
         canvas,
         mode,
         onStats: (stats) => {
-          if (token === this.upscaleToken) {
-            this.upscaleStats.set(stats);
+          if (token !== this.upscaleToken) {
+            return;
+          }
+
+          this.upscaleStats.set(stats);
+
+          const decision = this.fallback.observe(stats, performance.now());
+          if (decision) {
+            // Настройку не переписываем: выбор человека остаётся прежним, а
+            // на другой серии или другом качестве режим может и потянуть.
+            this.upscaleNote.set(decision.reason);
+            this.upscaleMode.set(decision.to);
           }
         },
         onError: (message) => {

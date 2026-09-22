@@ -66,3 +66,27 @@ bun run tauri icon src-tauri/icons/app-icon.svg --output /tmp/anion-flow-icon --
 cp /tmp/anion-flow-icon/1024x1024.png src-tauri/icons/app-icon.png
 bun run tauri icon src-tauri/icons/app-icon.png
 ```
+
+## Веса модели апскейла
+
+Режим «Детали» в плеере считает нейросеть `2x_AnimeJaNai_V2_SuperUltraCompact`
+(архитектура Real-ESRGAN Compact, 24nf/8nc), автор — the-database, лицензия
+**CC-BY-NC-SA-4.0**. Источник — релиз `2.0.0` репозитория
+[the-database/mpv-upscale-2x_animejanai](https://github.com/the-database/mpv-upscale-2x_animejanai),
+архив `2x_AnimeJaNai_V2_ModelsOnly.zip`.
+
+В репозитории лежит не сам `.onnx`, а `src/assets/upscale/weights.bin` —
+те же веса, переложенные в порядок чтения шейдера скриптом
+`scripts/compact-to-wgsl.py`. Лицензия и источник едут рядом, в `model.json`.
+Лицензия некоммерческая: приложение личное, но при любом ином использовании
+это ограничение сохраняется.
+
+Обновить веса из другой модели:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install numpy onnx onnxruntime
+.venv/bin/python scripts/compact-to-wgsl.py convert model.onnx src/assets/upscale/ --license CC-BY-NC-SA-4.0
+```
+
+Скрипт сам вычитывает архитектуру из графа и отказывается писать файлы, если
+раскладка разошлась с выходом `onnxruntime`.

@@ -1,0 +1,104 @@
+{
+  "arch": "SRVGGNetCompact",
+  "license": "CC-BY-NC-SA-4.0",
+  "numFeat": 24,
+  "numConv": 8,
+  "scale": 2,
+  "pack": 4,
+  "dtype": "float16",
+  "source": "2x_AnimeJaNai_V2_SuperUltraCompact_100k.onnx",
+  "sha256": "8c77c8d84d0dbd65e8b72d9073a78ec2bf682e53cadf3fa872be2dbfffd00508",
+  "bytes": 90744,
+  "layers": [
+    {
+      "name": "Conv_0",
+      "offset": 0,
+      "in": 3,
+      "out": 24,
+      "inGroups": 1,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_2",
+      "offset": 1824,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_4",
+      "offset": 12288,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_6",
+      "offset": 22752,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_8",
+      "offset": 33216,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_10",
+      "offset": 43680,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_12",
+      "offset": 54144,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_14",
+      "offset": 64608,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_16",
+      "offset": 75072,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "Conv_18",
+      "offset": 85536,
+      "in": 24,
+      "out": 12,
+      "inGroups": 6,
+      "outGroups": 3,
+      "prelu": false
+    }
+  ]
+}

@@ -44,3 +44,7 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
+
+# Одноразовая оснастка конвертера весов (scripts/compact-to-wgsl.py)
+__pycache__/
+.venv/
