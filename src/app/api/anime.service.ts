@@ -10,6 +10,28 @@ import type {
 } from './anime.types';
 
 /**
+ * Сколько живёт запись кэша. Бессрочный кэш держал ленту и страницу тайтла
+ * до перезапуска: вышедшая за это время серия не появлялась, пока приложение
+ * открыто, а открыто оно, бывает, сутками. Пять минут с запасом защищают
+ * от 429 при навигации туда-обратно.
+ */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Жанры меняются реже релизов приложения — держим их час. */
+const GENRES_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Потолок записей. Каждый набор фильтров каталога — свой ключ, и за долгую
+ * сессию их набегали сотни, вместе с полными списками тайтлов в памяти.
+ */
+const CACHE_LIMIT = 100;
+
+interface CacheEntry {
+  promise: Promise<unknown>;
+  expiresAt: number;
+}
+
+/**
  * Каталожная часть API. Компоненты не ходят в сеть сами.
  *
  * Транспорт, заголовки и разбор ошибок живут в ApiClient — здесь остаётся
@@ -21,7 +43,7 @@ import type {
 @Injectable({ providedIn: 'root' })
 export class AnimeService {
   private readonly api = inject(ApiClient);
-  private readonly cache = new Map<string, Promise<unknown>>();
+  private readonly cache = new Map<string, CacheEntry>();
 
   getFeed(): Promise<AnimeFeed> {
     return this.cached('feed', () => this.api.get<AnimeFeed>('/anime/feed'));
@@ -34,8 +56,10 @@ export class AnimeService {
   }
 
   getGenres(): Promise<GenresResponse> {
-    return this.cached('genres', () =>
-      this.api.get<GenresResponse>('/anime/genres')
+    return this.cached(
+      'genres',
+      () => this.api.get<GenresResponse>('/anime/genres'),
+      GENRES_TTL_MS
     );
   }
 
@@ -84,22 +108,50 @@ export class AnimeService {
     return this.api.post<Anime[]>('/anime/search', query);
   }
 
-  private cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  private cached<T>(
+    key: string,
+    load: () => Promise<T>,
+    ttlMs = CACHE_TTL_MS
+  ): Promise<T> {
+    const now = Date.now();
     const hit = this.cache.get(key);
-    if (hit) {
-      return hit as Promise<T>;
+
+    if (hit && hit.expiresAt > now) {
+      // Map помнит порядок вставки: перекладывая ключ в конец, получаем LRU —
+      // вытесняется то, к чему дольше всего не обращались.
+      this.cache.delete(key);
+      this.cache.set(key, hit);
+      return hit.promise as Promise<T>;
     }
 
     // Промис кладётся в кэш до резолва — это склеивает параллельные запросы
     // одного ключа в один поход в сеть. Упавший промис выбрасывается, иначе
-    // единичная сетевая ошибка залипла бы навсегда.
+    // единичная сетевая ошибка залипла бы навсегда. Сверка по ссылке нужна,
+    // чтобы опоздавшая ошибка не стёрла уже более свежую запись.
+    const entry: CacheEntry = { promise: Promise.resolve(), expiresAt: now + ttlMs };
     const pending = load().catch((error: unknown) => {
-      this.cache.delete(key);
+      if (this.cache.get(key) === entry) {
+        this.cache.delete(key);
+      }
       throw error;
     });
+    entry.promise = pending;
 
-    this.cache.set(key, pending);
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    this.evictOverflow();
+
     return pending;
+  }
+
+  private evictOverflow(): void {
+    for (const key of this.cache.keys()) {
+      if (this.cache.size <= CACHE_LIMIT) {
+        return;
+      }
+
+      this.cache.delete(key);
+    }
   }
 
   private toQueryString(query: AnimeQuery): string {

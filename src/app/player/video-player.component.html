@@ -6,14 +6,13 @@
   [class.player--idle]="!controlsVisible()"
   (keydown)="onKeydown($event)"
   (pointerleave)="hideControlsSoon()"
-  (pointermove)="pokeControls()"
 >
   <video
     #video
     class="player__video"
     playsinline
-    [poster]="frames().length > 0 ? '' : poster()"
-    (click)="onVideoClick()"
+    [poster]="playedOnce() || frames().length > 0 ? '' : poster()"
+    (click)="onVideoClick($event)"
     (dblclick)="onVideoDoubleClick()"
     (ended)="onEnded()"
     (error)="onVideoError()"
@@ -21,6 +20,8 @@
     (pause)="onPause()"
     (play)="onPlay()"
     (playing)="onPlaying()"
+    (ratechange)="syncMediaPosition()"
+    (seeked)="syncMediaPosition()"
     (waiting)="onWaiting()"
     (timeupdate)="onTimeUpdate()"
     (volumechange)="onVolumeChange()"
@@ -81,7 +82,7 @@
       </button>
     </div>
   } @else {
-    @if (buffering() && !paused()) {
+    @if ((buffering() && !paused()) || switchingQuality()) {
       <span
         class="overlay__spinner buffering"
         role="status"
@@ -94,7 +95,8 @@
         class="bigplay"
         type="button"
         aria-label="Воспроизвести"
-        (click)="togglePlay()"
+        (click)="onVideoClick($event)"
+        (dblclick)="onVideoDoubleClick()"
       >
         <tui-icon icon="@tui.play" />
       </button>
@@ -145,7 +147,7 @@
         aria-label="Перемотка"
         [attr.aria-valuemax]="duration()"
         [attr.aria-valuemin]="0"
-        [attr.aria-valuenow]="position()"
+        [attr.aria-valuenow]="shownPosition()"
         (pointercancel)="scrubEnd($event, seek)"
         (pointerdown)="scrubStart($event, seek)"
         (pointerleave)="clearHover()"
@@ -165,7 +167,7 @@
         ></span>
         <span
           class="seek__fill"
-          [style.width.%]="duration() ? (position() / duration()) * 100 : 0"
+          [style.width.%]="duration() ? (shownPosition() / duration()) * 100 : 0"
         ></span>
       </div>
 
@@ -227,7 +229,7 @@
         </div>
 
         <span class="time">
-          {{ formatTime(position()) }}
+          {{ formatTime(shownPosition()) }}
           <span class="time__total">/ {{ formatTime(duration()) }}</span>
         </span>
 
@@ -274,18 +276,26 @@
         } @else {
           <details class="quality" appAutoCloseMenu>
             <summary class="ghost quality__trigger">
-              {{ actualQuality() ? actualQuality() + 'p' : 'Качество' }}
+              @if (switchingQuality()) {
+                {{ requestedQuality() }}p…
+              } @else {
+                {{ actualQuality() ? actualQuality() + 'p' : 'Качество' }}
+              }
             </summary>
-            <div class="quality__menu">
+            <div class="quality__menu" [class.quality__menu--wide]="qualityNote()">
               @for (option of qualities; track option) {
                 <button
                   class="quality__option"
                   type="button"
-                  [class.quality__option--active]="requestedQuality() === option"
+                  [class.quality__option--active]="shownQuality() === option"
+                  [disabled]="switchingQuality()"
                   (click)="changeQuality(option)"
                 >
                   {{ option }}p
                 </button>
+              }
+              @if (qualityNote()) {
+                <p class="quality__note">{{ qualityNote() }}</p>
               }
             </div>
           </details>

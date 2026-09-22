@@ -32,6 +32,12 @@
         [iframeUrl]="current.iframeUrl"
         [isLastEpisode]="nextTask() === null"
         [localPath]="current.outputPath"
+        [nowPlaying]="{
+          title: current.title,
+          episode: current.episode,
+          dubbing: current.dubbing,
+          artwork: current.poster?.big
+        }"
         [poster]="current.poster?.big ?? ''"
         [startPositionSecs]="startPositionSecs()"
         [detachRoute]="detachRoute()"

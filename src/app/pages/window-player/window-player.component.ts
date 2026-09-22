@@ -18,6 +18,7 @@ import { DownloadService } from '../../api/download.service';
 import { RemoteWatchProgressService } from '../../api/remote-watch-progress.service';
 import { UserService } from '../../api/user.service';
 import { WatchProgressService } from '../../api/watch-progress.service';
+import { type NowPlaying, sameNowPlaying } from '../../player/media-session';
 import { orderPreviewFrames } from '../../player/preview-frames';
 import {
   type PlaybackProgress,
@@ -151,6 +152,30 @@ export class WindowPlayerComponent {
   );
 
   readonly skips = computed(() => this.selected()?.skips ?? {});
+
+  readonly nowPlaying = computed<NowPlaying | null>(() => {
+    const task = this.taskItem();
+    if (task) {
+      return {
+        title: task.title,
+        episode: task.episode,
+        dubbing: task.dubbing,
+        artwork: task.poster?.big,
+      };
+    }
+
+    const anime = this.animeData.value();
+    const episode = this.selected();
+
+    return anime && episode
+      ? {
+          title: anime.title,
+          episode: episode.number,
+          dubbing: episode.data.dubbing,
+          artwork: anime.poster.big,
+        }
+      : null;
+  }, { equal: sameNowPlaying });
 
   readonly isLastEpisode = computed(() => {
     if (this.task()) {

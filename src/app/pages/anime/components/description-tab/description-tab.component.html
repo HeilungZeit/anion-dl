@@ -98,6 +98,12 @@
           [localPath]="localPath()"
           [isLastEpisode]="isLastEpisode()"
           [frames]="frames()"
+          [nowPlaying]="{
+            title: anime().title,
+            episode: episode.number,
+            dubbing: episode.data.dubbing,
+            artwork: anime().poster.big
+          }"
           [poster]="preview()"
           [skips]="episode.skips"
           [startPositionSecs]="startPositionSecs()"

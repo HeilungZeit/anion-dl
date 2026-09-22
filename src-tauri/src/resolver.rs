@@ -356,7 +356,16 @@ pub(crate) async fn upgrade_quality(manifest: String, preferred: u32) -> String 
         Err(_) => return manifest,
     };
 
+    let current = quality_of(&manifest);
+
     for quality in QUALITY_LADDER.iter().filter(|item| **item <= preferred) {
+        // Исходный манифест только что выдал Kodik, он заведомо живой.
+        // Проверка стоила лишнего запроса к CDN на каждом старте серии, когда
+        // выдали сразу нужное качество, а это обычный случай для HTTP-тракта.
+        if current == Some(*quality) {
+            return manifest;
+        }
+
         let candidate = format!("{prefix}{quality}{suffix}");
 
         if is_playlist(client, &candidate).await {
@@ -382,11 +391,17 @@ async fn is_playlist(client: &reqwest::Client, url: &str) -> bool {
         return false;
     }
 
-    response
-        .text()
-        .await
-        .map(|body| body.trim_start().starts_with("#EXTM3U"))
-        .unwrap_or(false)
+    // Хватает первого куска тела: плейлист серии — десятки килобайт списка
+    // сегментов, а решает только его заголовок. Кусок меньше длины маркера
+    // возможен разве что теоретически; тогда ответ считается не плейлистом,
+    // и лестница просто пробует качество ниже.
+    let mut response = response;
+    match response.chunk().await {
+        Ok(Some(chunk)) => String::from_utf8_lossy(&chunk)
+            .trim_start()
+            .starts_with("#EXTM3U"),
+        _ => false,
+    }
 }
 
 /// Качество, зашитое в имя манифеста. У Kodik это единственный честный

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseVolume } from './player-settings.service';
+import { parseQuality, parseVolume } from './player-settings.service';
 
 describe('parseVolume', () => {
   test('keeps a valid setting', () => {
@@ -19,5 +19,17 @@ describe('parseVolume', () => {
     expect(parseVolume(undefined)).toBeNull();
     expect(parseVolume('loud')).toBeNull();
     expect(parseVolume({ volume: Number.NaN })).toBeNull();
+  });
+});
+
+describe('parseQuality', () => {
+  test('keeps a quality from the menu', () => {
+    expect(parseQuality(480)).toBe(480);
+  });
+
+  test('ignores anything else', () => {
+    expect(parseQuality(1080)).toBeNull();
+    expect(parseQuality('720')).toBeNull();
+    expect(parseQuality(undefined)).toBeNull();
   });
 });

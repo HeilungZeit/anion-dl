@@ -23,6 +23,11 @@ import { ResolverService } from '../api/resolver.service';
 import { currentWindowTarget } from '../windows/current-window';
 import { AutoCloseMenuDirective } from './auto-close-menu.directive';
 import { DEFAULT_QUALITY, QUALITIES, qualityOf } from './manifest-quality';
+import {
+  MediaSessionBridge,
+  type NowPlaying,
+  sameNowPlaying,
+} from './media-session';
 import { PlayerSettingsService } from './player-settings.service';
 import { ReResolveOnForbidden } from './re-resolve';
 import { shouldRefreshAhead } from './signature-clock';
@@ -46,8 +51,18 @@ export interface PlaybackProgress {
 
 type PlayerStatus = 'resolving' | 'ready' | 'error';
 
-/** Как часто тикает служебный опрос: позиция, прогресс, срок подписи. */
+/** Как часто тикает служебный опрос: позиция, подсказка пропуска, срок подписи. */
 const TICK_MS = 500;
+
+/**
+ * Как часто прогресс уходит наружу во время игры.
+ *
+ * Каждое сохранение пересобирает всю историю просмотра, рассылает событие по
+ * окнам и перерисовывает список серий. На каждом тике это давало заметные
+ * подлагивания; точную позицию всё равно фиксируют пауза, конец серии и
+ * закрытие плеера.
+ */
+const PROGRESS_EMIT_MS = 5000;
 const IS_PLAYER_WINDOW = currentWindowTarget().kind === 'player';
 /** Воспроизведение началось в каком-то из окон. */
 const PLAYBACK_EVENT = 'player://started';
@@ -57,14 +72,6 @@ const SEEK_STEP_SECS = 10;
 /** Сколько панель держится после последнего движения мыши. */
 const CONTROLS_HIDE_MS = 2500;
 
-/**
- * Окно ожидания второго клика.
- *
- * Одиночный клик переключает воспроизведение, двойной — полный экран. Без
- * задержки двойной успел бы дважды дёрнуть play/pause до того, как станет
- * ясно, что это был именно двойной.
- */
-const DOUBLE_CLICK_MS = 220;
 const VOLUME_STEP = 0.05;
 
 /** Сколько секунд даётся, чтобы отменить переход на следующую серию. */
@@ -101,6 +108,15 @@ interface WebKitVideo extends HTMLVideoElement {
   webkitSupportsPresentationMode?: (mode: string) => boolean;
   webkitSetPresentationMode?: (mode: string) => void;
   webkitPresentationMode?: string;
+}
+
+/** Одна и та же подсказка пропуска — сигнал не должен дёргать шаблон. */
+function sameSkipHint(a: SkipHint | null, b: SkipHint | null): boolean {
+  return (
+    a?.kind === b?.kind &&
+    a?.segment.startSeconds === b?.segment.startSeconds &&
+    a?.segment.stopSeconds === b?.segment.stopSeconds
+  );
 }
 
 function isPipSupported(): boolean {
@@ -148,6 +164,13 @@ export class VideoPlayerComponent {
   readonly skips = input<VideoSkips>({});
   readonly isLastEpisode = input(false);
   readonly poster = input('');
+
+  /** Что показать в системной карточке «Сейчас играет»; null — ничего. */
+  readonly nowPlaying = input<NowPlaying | null>(null);
+  /** Родитель мог пересоздать тот же объект — карточку это трогать не должно. */
+  private readonly mediaInfo = computed(() => this.nowPlaying(), {
+    equal: sameNowPlaying,
+  });
 
   /**
    * Кадры из серий для заставки до запуска. Сменяются сами; постер остаётся
@@ -200,6 +223,31 @@ export class VideoPlayerComponent {
   readonly requestedQuality = signal<number>(DEFAULT_QUALITY);
   readonly actualQuality = signal<number | null>(null);
   readonly qualities = QUALITIES;
+  /** Отмечен в меню пункт, который реально играет, а не тот, что просили. */
+  readonly shownQuality = computed(
+    () => this.actualQuality() ?? this.requestedQuality()
+  );
+  /**
+   * Просили лучше, чем есть у серии. Без пометки выбор 720p на серии без
+   * 720p выглядел так, будто клик просто не сработал.
+   */
+  readonly qualityNote = computed(() => {
+    const requested = this.requestedQuality();
+    const actual = this.actualQuality();
+
+    // Пока идёт смена, запрошенное уже новое, а играет ещё старое. Без этой
+    // проверки переход 360 → 720 на секунду объявлял, что 720p нет, и тут
+    // же его включал.
+    if (this.switchingQuality()) {
+      return '';
+    }
+
+    return actual !== null && actual < requested
+      ? `${requested}p у этой серии нет — играет ${actual}p.`
+      : '';
+  });
+  /** Идёт смена качества: Rust проверяет манифесты, поток ещё старый. */
+  readonly switchingQuality = signal(false);
 
   readonly position = signal(0);
   readonly duration = signal(0);
@@ -210,7 +258,7 @@ export class VideoPlayerComponent {
   readonly volume = signal(1);
   readonly muted = signal(false);
   readonly isFullscreen = signal(false);
-  readonly skipHint = signal<SkipHint | null>(null);
+  readonly skipHint = signal<SkipHint | null>(null, { equal: sameSkipHint });
 
   /** Играет ли сейчас файл с диска: у него нет ни качества, ни подписи. */
   readonly isLocal = signal(false);
@@ -269,6 +317,14 @@ export class VideoPlayerComponent {
   readonly hoverSecs = signal<number | null>(null);
   readonly hoverPercent = signal(0);
 
+  /**
+   * Куда тянут ползунок; null — не тянут. Поток перематывается только по
+   * отпускании: seek на каждый сдвиг мыши заставлял hls.js бросать и заново
+   * качать сегменты, и перемотка шла рывками.
+   */
+  readonly scrubSecs = signal<number | null>(null);
+  readonly shownPosition = computed(() => this.scrubSecs() ?? this.position());
+
   /** Апскейл: режим, доступность и возможная ошибка запуска. */
   readonly upscaleMode = signal<UpscaleMode>('off');
   readonly upscaleModes = UPSCALE_MODES;
@@ -286,8 +342,6 @@ export class VideoPlayerComponent {
   /** Следит, тянет ли железо выбранный режим. Подробности — в модуле. */
   private readonly fallback = new UpscaleFallback();
 
-  /** Растёт на каждой пересборке потока — сигнал апскейлу пересобраться. */
-  private readonly manifestGeneration = signal(0);
   readonly upscaleActive = computed(
     () => this.upscaleMode() !== 'off' && this.upscaleError() === ''
   );
@@ -318,6 +372,19 @@ export class VideoPlayerComponent {
   private ticker: ReturnType<typeof setInterval> | null = null;
   private skipController = new SkipController({});
   private readonly latch = new ReResolveOnForbidden();
+  private readonly mediaSession = new MediaSessionBridge();
+  /**
+   * Сохранённое качество. Первый резолв его дожидается: резолв и так идёт
+   * секунду-полторы, а чтение файла настроек — миллисекунды.
+   */
+  private readonly qualityRestored = this.settings
+    .getQuality()
+    .then((quality) => {
+      if (quality !== null) {
+        this.requestedQuality.set(quality);
+      }
+    })
+    .catch(() => undefined);
 
   /** Отсекает ответы резолвера по сериям, которые уже закрыли. */
   private generation = 0;
@@ -325,7 +392,9 @@ export class VideoPlayerComponent {
   private expectResume = false;
   private scrubbing = false;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
-  private clickTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Последнее движение мыши: таймер скрытия сверяется с ним, а не перезаводится. */
+  private lastActivityAt = 0;
+  private lastProgressAt = 0;
   private upscaler: UpscaleHandle | null = null;
   /** Отсекает запуск апскейла, который успел устареть, пока ждал GPU. */
   private upscaleToken = 0;
@@ -341,6 +410,33 @@ export class VideoPlayerComponent {
   );
 
   constructor() {
+    // Движение мыши слушается мимо шаблона: обработчик из шаблона в zoneless
+    // запускал бы проверку изменений плеера на каждый пиксель пути курсора.
+    const host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+    const onPointerMove = (): void => this.pokeControls();
+    host.addEventListener('pointermove', onPointerMove, { passive: true });
+
+    this.mediaSession.bind({
+      play: () => {
+        if (this.videoRef()?.nativeElement.paused) {
+          this.togglePlay();
+        }
+      },
+      pause: () => this.videoRef()?.nativeElement.pause(),
+      seekBy: (delta) => this.seekBy(delta),
+      seekTo: (secs) => this.seekTo(secs),
+    });
+
+    effect(() => {
+      this.mediaSession.setMetadata(this.mediaInfo(), this.poster());
+    });
+
+    effect(() => {
+      this.mediaSession.setNext(
+        this.isLastEpisode() ? null : () => untracked(() => this.goNext())
+      );
+    });
+
     void this.settings
       .getUpscale()
       .then((mode) => this.upscaleMode.set(mode));
@@ -362,13 +458,11 @@ export class VideoPlayerComponent {
       }
     });
 
-    // Апскейл пересобирается и при смене режима, и при смене потока: после
-    // переролва или другого качества в DOM уже другой кадр, а конвейер
-    // WebGPU привязан к прежним размерам.
+    // Смена качества или переролв апскейл не перезапускают: конвейер сам
+    // пересобирается, увидев кадр другого размера (см. `draw` в upscale.ts).
     effect(() => {
       const mode = this.upscaleMode();
       const ready = this.status() === 'ready';
-      this.manifestGeneration();
 
       untracked(() => void this.applyUpscale(mode, ready));
     });
@@ -419,7 +513,7 @@ export class VideoPlayerComponent {
           this.skips(),
           this.isLastEpisode()
         );
-        void this.load(url, this.requestedQuality(), startSecs, localPath);
+        void this.load(url, startSecs, localPath);
       });
     });
 
@@ -458,12 +552,9 @@ export class VideoPlayerComponent {
       this.emitPausedProgress();
       unlisten?.();
       unlistenPlayback?.();
+      host.removeEventListener('pointermove', onPointerMove);
       if (this.hideTimer !== null) {
         clearTimeout(this.hideTimer);
-      }
-
-      if (this.clickTimer !== null) {
-        clearTimeout(this.clickTimer);
       }
 
       if (this.volumeTimer !== null) {
@@ -474,6 +565,7 @@ export class VideoPlayerComponent {
       this.stopFrameCycle();
       this.stopUpscale();
       this.teardown();
+      this.mediaSession.clear();
     });
   }
 
@@ -481,7 +573,6 @@ export class VideoPlayerComponent {
 
   private async load(
     iframeUrl: string,
-    quality: number,
     positionSecs: number,
     localPath: string | null = null
   ): Promise<void> {
@@ -490,6 +581,7 @@ export class VideoPlayerComponent {
     this.status.set('resolving');
     this.errorText.set('');
     this.skipHint.set(null);
+    this.switchingQuality.set(false);
 
     if (localPath) {
       await this.loadLocal(token, localPath, positionSecs, iframeUrl);
@@ -497,13 +589,17 @@ export class VideoPlayerComponent {
     }
 
     try {
-      const manifest = await this.resolver.resolveManifest(iframeUrl, quality);
+      await this.qualityRestored;
+      const manifest = await this.resolver.resolveManifest(
+        iframeUrl,
+        this.requestedQuality()
+      );
 
       if (token !== this.generation) {
         return;
       }
 
-      this.attach(manifest, positionSecs, iframeUrl);
+      this.attach(manifest, positionSecs, iframeUrl, this.hasStarted());
     } catch (error: unknown) {
       if (token === this.generation) {
         this.fail(error instanceof Error ? error.message : String(error));
@@ -547,7 +643,7 @@ export class VideoPlayerComponent {
       'loadedmetadata',
       () => {
         if (token === this.generation) {
-          this.onReady(video, positionSecs);
+          this.onReady(video, positionSecs, this.hasStarted());
         }
       },
       { once: true }
@@ -566,10 +662,16 @@ export class VideoPlayerComponent {
     this.destroyHls();
   }
 
+  /**
+   * @param resume запускать ли воспроизведение, когда поток готов. Смена
+   * качества и переролв сохраняют то, что было: поставленная на паузу серия
+   * не должна заиграть сама.
+   */
   private attach(
     manifestUrl: string,
     positionSecs: number,
-    iframeUrl: string
+    iframeUrl: string,
+    resume: boolean
   ): void {
     const video = this.videoRef()?.nativeElement;
     if (!video) {
@@ -595,7 +697,9 @@ export class VideoPlayerComponent {
       this.hls = hls;
 
       hls.on(Hls.Events.ERROR, (_event, data) => this.onHlsError(data));
-      hls.on(Hls.Events.MANIFEST_PARSED, () => this.onReady(video, positionSecs));
+      hls.on(Hls.Events.MANIFEST_PARSED, () =>
+        this.onReady(video, positionSecs, resume)
+      );
 
       hls.loadSource(manifestUrl);
       hls.attachMedia(video);
@@ -609,7 +713,7 @@ export class VideoPlayerComponent {
       video.src = manifestUrl;
       video.addEventListener(
         'loadedmetadata',
-        () => this.onReady(video, positionSecs),
+        () => this.onReady(video, positionSecs, resume),
         { once: true }
       );
       this.startTicker();
@@ -668,8 +772,13 @@ export class VideoPlayerComponent {
     };
   }
 
-  private onReady(video: HTMLVideoElement, positionSecs: number): void {
+  private onReady(
+    video: HTMLVideoElement,
+    positionSecs: number,
+    resume: boolean
+  ): void {
     this.status.set('ready');
+    this.switchingQuality.set(false);
     this.duration.set(Number.isFinite(video.duration) ? video.duration : 0);
 
     if (positionSecs > 0) {
@@ -679,9 +788,10 @@ export class VideoPlayerComponent {
     this.playbackReady = true;
 
     // Открытие страницы тайтла просмотр не начинает: человек пришёл почитать
-    // описание или выбрать серию, а не слушать опенинг. Дальше — начинает:
-    // смена серии и переролв подписи происходят уже во время просмотра.
-    if (this.hasStarted()) {
+    // описание или выбрать серию, а не слушать опенинг. Смена серии — уже
+    // осознанное продолжение просмотра, а смена качества и переролв сохраняют
+    // то состояние, в котором их застали.
+    if (resume) {
       void video.play().catch(() => undefined);
     }
   }
@@ -701,10 +811,16 @@ export class VideoPlayerComponent {
       this.pendingSeek = null;
 
       const duration = video.duration;
-      video.currentTime =
+      const target =
         Number.isFinite(duration) && duration > 0
           ? Math.min(positionSecs, Math.max(duration - 1, 0))
           : positionSecs;
+
+      // hls.js обычно уже стоит на нужной секунде благодаря startPosition.
+      // Повторный seek на то же место заставлял его заново качать сегмент.
+      if (Math.abs(video.currentTime - target) > 0.5) {
+        video.currentTime = target;
+      }
       this.position.set(video.currentTime);
     };
 
@@ -758,6 +874,9 @@ export class VideoPlayerComponent {
     }
 
     this.refreshing = true;
+    // Своё поколение: смена качества или серии посреди переролва делает его
+    // ответ ненужным, и без проверки поток подключился бы дважды.
+    const token = ++this.generation;
 
     try {
       const video = this.videoRef()?.nativeElement;
@@ -765,18 +884,27 @@ export class VideoPlayerComponent {
         video && video.currentTime > 0
           ? video.currentTime
           : this.latch.savedPositionSecs;
+      // 403 останавливает загрузку, но не ставит видео на паузу, так что
+      // играющая серия продолжит играть, а стоявшая на паузе — стоять.
+      const resume = video ? !video.paused : this.hasStarted();
 
       const manifest = await this.resolver.resolveManifest(
         this.iframeUrl(),
         this.requestedQuality()
       );
 
+      if (token !== this.generation) {
+        return;
+      }
+
       this.expectResume = true;
-      this.attach(manifest, position, this.iframeUrl());
+      this.attach(manifest, position, this.iframeUrl(), resume);
     } catch (error: unknown) {
-      this.fail(
-        error instanceof Error ? error.message : 'Не удалось обновить поток'
-      );
+      if (token === this.generation) {
+        this.fail(
+          error instanceof Error ? error.message : 'Не удалось обновить поток'
+        );
+      }
     } finally {
       this.refreshing = false;
     }
@@ -796,11 +924,16 @@ export class VideoPlayerComponent {
 
       this.latch.rememberPosition(position);
       this.skipHint.set(this.skipController.visibleSkip(position, duration));
-      this.progress.emit({
-        iframeUrl: this.playbackIframeUrl,
-        positionSecs: position,
-        durationSecs: duration,
-      });
+
+      const now = performance.now();
+      if (!video.paused && now - this.lastProgressAt >= PROGRESS_EMIT_MS) {
+        this.lastProgressAt = now;
+        this.progress.emit({
+          iframeUrl: this.playbackIframeUrl,
+          positionSecs: position,
+          durationSecs: duration,
+        });
+      }
 
       // READY на каждом тике сбросил бы затвор и пропустил шторм сегментов,
       // поэтому флаг снимается ровно один раз после переролва.
@@ -843,6 +976,15 @@ export class VideoPlayerComponent {
     const video = this.videoRef()?.nativeElement;
     if (video) {
       this.duration.set(Number.isFinite(video.duration) ? video.duration : 0);
+      this.mediaSession.setPosition(video);
+    }
+  }
+
+  /** Перемотка, смена скорости — системной карточке нужна новая точка отсчёта. */
+  syncMediaPosition(): void {
+    const video = this.videoRef()?.nativeElement;
+    if (video) {
+      this.mediaSession.setPosition(video);
     }
   }
 
@@ -918,6 +1060,8 @@ export class VideoPlayerComponent {
 
   onPlay(): void {
     this.paused.set(false);
+    this.mediaSession.setPlaying(true);
+    this.syncMediaPosition();
     this.playedOnce.set(true);
     this.resumeOffer.set(null);
     this.pokeControls();
@@ -937,6 +1081,8 @@ export class VideoPlayerComponent {
   onPause(): void {
     this.buffering.set(false);
     this.paused.set(true);
+    this.mediaSession.setPlaying(false);
+    this.syncMediaPosition();
     this.pokeControls();
     this.emitPausedProgress();
   }
@@ -962,24 +1108,22 @@ export class VideoPlayerComponent {
 
   // ——— управление ———
 
-  /** Клик по кадру: воспроизведение, но с оглядкой на возможный двойной. */
-  onVideoClick(): void {
-    if (this.clickTimer !== null) {
+  /**
+   * Клик по кадру переключает воспроизведение сразу, без ожидания второго
+   * клика: прежняя пауза в 220 мс ощущалась как задержка на каждое нажатие.
+   * Второй клик двойного (`detail > 1`) пропускается — им займётся dblclick.
+   */
+  onVideoClick(event: MouseEvent): void {
+    if (event.detail > 1) {
       return;
     }
 
-    this.clickTimer = setTimeout(() => {
-      this.clickTimer = null;
-      this.togglePlay();
-    }, DOUBLE_CLICK_MS);
+    this.togglePlay();
   }
 
+  /** Первый клик уже переключил воспроизведение — возвращаем как было. */
   onVideoDoubleClick(): void {
-    if (this.clickTimer !== null) {
-      clearTimeout(this.clickTimer);
-      this.clickTimer = null;
-    }
-
+    this.togglePlay();
     void this.toggleFullscreen();
   }
 
@@ -1108,8 +1252,12 @@ export class VideoPlayerComponent {
 
   /** Показать панель и завести таймер на её скрытие. */
   pokeControls(): void {
+    this.lastActivityAt = performance.now();
     this.controlsVisible.set(true);
-    this.restartHideTimer();
+
+    if (this.hideTimer === null) {
+      this.scheduleHide(CONTROLS_HIDE_MS);
+    }
   }
 
   /** Курсор ушёл с плеера — прятать сразу, но только если идёт воспроизведение. */
@@ -1119,16 +1267,24 @@ export class VideoPlayerComponent {
     }
   }
 
-  private restartHideTimer(): void {
-    if (this.hideTimer !== null) {
-      clearTimeout(this.hideTimer);
-    }
-
+  /**
+   * Таймер не перезаводится на каждое движение мыши: срабатывая, он сам
+   * проверяет, сколько прошло с последнего, и при нужде откладывается.
+   */
+  private scheduleHide(delayMs: number): void {
     this.hideTimer = setTimeout(() => {
+      this.hideTimer = null;
+
+      const idleMs = performance.now() - this.lastActivityAt;
+      if (idleMs < CONTROLS_HIDE_MS) {
+        this.scheduleHide(CONTROLS_HIDE_MS - idleMs);
+        return;
+      }
+
       if (!this.paused() && !this.scrubbing) {
         this.controlsVisible.set(false);
       }
-    }, CONTROLS_HIDE_MS);
+    }, delayMs);
   }
 
   seekBy(deltaSecs: number): void {
@@ -1167,11 +1323,21 @@ export class VideoPlayerComponent {
     }
   }
 
+  /**
+   * Сравнивается с тем, что играет, а не с тем, что просили: иначе после
+   * отката 720 → 480 повторный выбор 720p ничего не делал, а выбор 480p
+   * перезагружал тот же самый поток.
+   */
   changeQuality(quality: number): void {
-    if (quality !== this.requestedQuality()) {
-      this.requestedQuality.set(quality);
-      void this.switchQuality(quality);
+    const same =
+      quality === this.shownQuality() && quality === this.requestedQuality();
+    if (same || this.switchingQuality()) {
+      return;
     }
+
+    this.requestedQuality.set(quality);
+    void this.settings.setQuality(quality).catch(() => undefined);
+    void this.switchQuality(quality);
   }
 
   /** Смена качества использует текущую подпись и не повторяет полный резолв. */
@@ -1181,9 +1347,8 @@ export class VideoPlayerComponent {
     }
 
     const token = ++this.generation;
-    const video = this.videoRef()?.nativeElement;
-    const positionSecs = video?.currentTime ?? this.position();
     const iframeUrl = this.playbackIframeUrl || this.iframeUrl();
+    this.switchingQuality.set(true);
 
     try {
       const manifest = await this.resolver.changeManifestQuality(
@@ -1195,10 +1360,24 @@ export class VideoPlayerComponent {
         return;
       }
 
+      // Нужного качества нет, Rust вернул тот же поток — перезапускать нечего,
+      // о недоступности скажет пометка в меню.
+      if (manifest === this.manifestUrl) {
+        this.switchingQuality.set(false);
+        return;
+      }
+
+      // Позиция и пауза берутся после резолва: пока Rust проверял манифесты,
+      // серия продолжала играть.
+      const video = this.videoRef()?.nativeElement;
+      const positionSecs = video?.currentTime ?? this.position();
+      const resume = video ? !video.paused : false;
+
       this.expectResume = true;
-      this.attach(manifest, positionSecs, iframeUrl);
+      this.attach(manifest, positionSecs, iframeUrl, resume);
     } catch (error: unknown) {
       if (token === this.generation) {
+        this.switchingQuality.set(false);
         this.fail(
           error instanceof Error ? error.message : 'Не удалось сменить качество'
         );
@@ -1207,12 +1386,7 @@ export class VideoPlayerComponent {
   }
 
   retry(): void {
-    void this.load(
-      this.iframeUrl(),
-      this.requestedQuality(),
-      this.position(),
-      this.localPath()
-    );
+    void this.load(this.iframeUrl(), this.position(), this.localPath());
   }
 
   // ——— заставка ———
@@ -1470,9 +1644,17 @@ export class VideoPlayerComponent {
   }
 
   scrubEnd(event: PointerEvent, bar: HTMLElement): void {
-    if (this.scrubbing) {
-      this.scrubbing = false;
-      bar.releasePointerCapture(event.pointerId);
+    if (!this.scrubbing) {
+      return;
+    }
+
+    this.scrubbing = false;
+    bar.releasePointerCapture(event.pointerId);
+
+    const target = this.scrubSecs();
+    this.scrubSecs.set(null);
+    if (target !== null) {
+      this.seekTo(target);
     }
   }
 
@@ -1498,12 +1680,21 @@ export class VideoPlayerComponent {
     return Math.min(Math.max((event.clientX - box.left) / box.width, 0), 1);
   }
 
+  /**
+   * Файл с диска перематывается вживую — это дёшево, и кадр идёт за
+   * ползунком. Поток по сети — только по отпускании, см. `scrubSecs`.
+   */
   private scrub(event: PointerEvent, bar: HTMLElement): void {
     const duration = this.duration();
     if (duration <= 0) {
       return;
     }
 
-    this.seekTo(this.ratioAt(event, bar) * duration);
+    const secs = this.ratioAt(event, bar) * duration;
+    this.scrubSecs.set(secs);
+
+    if (this.isLocal()) {
+      this.seekTo(secs);
+    }
   }
 }

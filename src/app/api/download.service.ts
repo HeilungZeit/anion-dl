@@ -142,13 +142,19 @@ export class DownloadService {
   constructor() {
     // Прогресс приходит из Rust потоком по всем задачам сразу, поэтому
     // подписка одна на сервис, а не на задачу.
-    void listen<ProgressPayload>(PROGRESS_EVENT, ({ payload }) => {
-      this.patch(payload.taskId, {
-        processedSecs: payload.processedSecs,
-        totalSecs: payload.totalSecs,
-        sizeBytes: payload.sizeBytes,
+    //
+    // Слушает только главное окно: прогресс показывают лишь его страницы.
+    // Окну плеера событие раз в секунду пересобирало бы список задач и
+    // пересчитывало всё, что от него зависит, прямо во время просмотра.
+    if (this.ownsQueue) {
+      void listen<ProgressPayload>(PROGRESS_EVENT, ({ payload }) => {
+        this.patch(payload.taskId, {
+          processedSecs: payload.processedSecs,
+          totalSecs: payload.totalSecs,
+          sizeBytes: payload.sizeBytes,
+        });
       });
-    });
+    }
 
     void this.restore();
   }
@@ -236,15 +242,22 @@ export class DownloadService {
     const paths = await this.plannedPaths(animeTitle, episodes);
     void ensureNoticePermission();
 
+    // Повторный клик по уже идущей серии не должен плодить дубликаты.
+    const active = new Set(
+      this.tasks()
+        .filter(isActive)
+        .map((task) => task.id)
+    );
+    const added: DownloadTask[] = [];
+
     for (const episode of episodes) {
       const id = `${episode.videoId}`;
 
-      // Повторный клик по уже идущей серии не должен плодить дубликаты.
-      if (this.tasks().some((task) => task.id === id && isActive(task))) {
+      if (active.has(id)) {
         continue;
       }
 
-      this.upsert({
+      added.push({
         id,
         animeId,
         title: animeTitle,
@@ -262,6 +275,10 @@ export class DownloadService {
       });
     }
 
+    // Одно обновление на весь сезон, а не по одному на серию: каждое
+    // пересобирало список задач и всё, что от него зависит.
+    this.upsertAll(added);
+
     await this.persist();
     void this.drain();
   }
@@ -274,7 +291,12 @@ export class DownloadService {
 
     // Задача, до которой очередь ещё не дошла, снимается без похода в Rust —
     // процесса там пока нет.
-    if (task.status !== 'downloading' && task.status !== 'resolving') {
+    //
+    // Резолв сюда же: ffmpeg ещё не запущен, и `cancel_download` не нашёл бы
+    // что убивать. Раньше отмена в эту секунду молча пропадала, и загрузка
+    // стартовала как ни в чём не бывало. `process` сверяется со статусом
+    // после резолва и ffmpeg уже не запускает.
+    if (task.status !== 'downloading') {
       this.patch(id, { status: 'cancelled', error: '' });
       await this.persist();
       return;
@@ -388,6 +410,11 @@ export class DownloadService {
         await this.getQuality()
       );
 
+      if (this.statusOf(task.id) !== 'resolving') {
+        // Отменили или убрали, пока шёл резолв.
+        return;
+      }
+
       this.patch(task.id, { status: 'downloading' });
 
       const report = await invoke<DownloadReport>('download_episode', {
@@ -412,6 +439,12 @@ export class DownloadService {
       });
     } catch (error: unknown) {
       const message = String(error);
+
+      // Ошибка резолва уже отменённой задачи не должна перекрасить её в
+      // «Ошибка».
+      if (this.statusOf(task.id) === 'cancelled') {
+        return;
+      }
 
       this.patch(task.id, {
         status: message.includes(CANCELLED) ? 'cancelled' : 'failed',
@@ -452,11 +485,20 @@ export class DownloadService {
     await this.store.save();
   }
 
-  private upsert(task: DownloadTask): void {
+  private upsertAll(added: readonly DownloadTask[]): void {
+    if (added.length === 0) {
+      return;
+    }
+
+    const ids = new Set(added.map((task) => task.id));
     this.tasks.update((tasks) => [
-      ...tasks.filter((item) => item.id !== task.id),
-      task,
+      ...tasks.filter((item) => !ids.has(item.id)),
+      ...added,
     ]);
+  }
+
+  private statusOf(id: string): TaskStatus | undefined {
+    return this.tasks().find((task) => task.id === id)?.status;
   }
 
   private patch(id: string, patch: Partial<DownloadTask>): void {

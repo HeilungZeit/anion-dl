@@ -47,6 +47,9 @@ pub struct Progress {
 
 pub const PROGRESS_EVENT: &str = "download://progress";
 
+/// Окно, которому принадлежит очередь загрузок (см. `DownloadService.ownsQueue`).
+const MAIN_WINDOW: &str = "main";
+
 /// Результат загрузки. Отдельное поле под предупреждение нужно, чтобы отличить
 /// «скачалось, но были шероховатости» от провала: раньше и то и другое было
 /// ошибкой, и полная серия помечалась красным.
@@ -109,7 +112,11 @@ pub async fn download_episode(
                     let micros: f64 = value.trim().parse().unwrap_or(0.0);
                     processed_secs = micros / 1_000_000.0;
 
-                    let _ = app.emit(
+                    // Только главному окну: очередь и её прогресс показывают
+                    // лишь его страницы, а окна плееров сериализовали бы
+                    // событие впустую каждую секунду.
+                    let _ = app.emit_to(
+                        MAIN_WINDOW,
                         PROGRESS_EVENT,
                         Progress {
                             task_id: task_id.clone(),

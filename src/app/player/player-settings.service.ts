@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { LazyStore } from '@tauri-apps/plugin-store';
 
+import { QUALITIES } from './manifest-quality';
 import { UPSCALE_MODES, type UpscaleMode } from './upscale';
 
 /**
@@ -13,6 +14,18 @@ import { UPSCALE_MODES, type UpscaleMode } from './upscale';
 const STORE_FILE = 'player.json';
 const UPSCALE_KEY = 'upscale';
 const VOLUME_KEY = 'volume';
+/**
+ * Качество просмотра. Своё, а не качество загрузок из `settings.json`:
+ * смотреть онлайн на слабой сети в 480p и качать в 720p — обычное дело.
+ */
+const QUALITY_KEY = 'quality';
+
+/** Только качества из меню: старое или поправленное руками значение — мимо. */
+export function parseQuality(saved: unknown): number | null {
+  return QUALITIES.includes(saved as (typeof QUALITIES)[number])
+    ? (saved as number)
+    : null;
+}
 
 export interface VolumeSetting {
   volume: number;
@@ -52,6 +65,15 @@ export class PlayerSettingsService {
 
   async setUpscale(mode: UpscaleMode): Promise<void> {
     await this.store.set(UPSCALE_KEY, mode);
+    await this.store.save();
+  }
+
+  async getQuality(): Promise<number | null> {
+    return parseQuality(await this.store.get<unknown>(QUALITY_KEY));
+  }
+
+  async setQuality(quality: number): Promise<void> {
+    await this.store.set(QUALITY_KEY, quality);
     await this.store.save();
   }
 

@@ -55,8 +55,21 @@ export class CommentsComponent {
     return absoluteMediaUrl(comment.avatars.small);
   }
 
+  /**
+   * Разбор текста кэшируется по объекту комментария: вызов из шаблона
+   * срабатывает на каждой проверке изменений, и без кэша вся лента заново
+   * прогонялась через регулярки при любом клике внутри неё.
+   */
+  private readonly parsed = new WeakMap<Comment, CommentPart[]>();
+
   parts(comment: Comment): CommentPart[] {
-    return parseCommentText(comment.text);
+    let parts = this.parsed.get(comment);
+    if (!parts) {
+      parts = parseCommentText(comment.text);
+      this.parsed.set(comment, parts);
+    }
+
+    return parts;
   }
 
   isRevealed(comment: Comment, part: CommentPart): boolean {

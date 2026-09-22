@@ -70,12 +70,14 @@
   inline-size: 100%;
   block-size: 100%;
   object-fit: contain;
-  opacity: 0;
   pointer-events: none;
+  // Не opacity: 0 — прозрачный слой во весь кадр всё равно композитится
+  // поверх видео, а скрытый не участвует в отрисовке вовсе.
+  visibility: hidden;
 }
 
 .player__canvas--on {
-  opacity: 1;
+  visibility: visible;
 }
 
 // Заставка из кадров серии до первого запуска. Кадры лежат стопкой и
@@ -251,7 +253,8 @@
   font-size: var(--anion-font-size-13);
   font-weight: 600;
   outline: none;
-  backdrop-filter: blur(6px);
+  // Без backdrop-filter: кнопка висит над играющим видео, и размытие
+  // пересчитывалось бы на каждом кадре под ней.
   transition: background var(--anion-duration-base) ease;
 
   &:hover,
@@ -604,6 +607,12 @@
     font-size: var(--anion-font-size-12);
     white-space: nowrap;
   }
+}
+
+// Пока меняется качество, второй выбор отклоняется — пункты это показывают.
+.quality__option:disabled {
+  cursor: progress;
+  opacity: 0.55;
 }
 
 .quality__option--active {
