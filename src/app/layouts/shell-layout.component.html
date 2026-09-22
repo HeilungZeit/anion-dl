@@ -65,6 +65,24 @@
       @if (!isInitialized()) {
         <span class="account-skeleton" aria-hidden="true"></span>
       } @else if (isAuthenticated()) {
+        <button
+          class="bell"
+          type="button"
+          (click)="openNotifications()"
+          [attr.aria-label]="
+            unreadCount()
+              ? 'Уведомления на сайте, непрочитанных: ' + unreadCount()
+              : 'Уведомления на сайте'
+          "
+        >
+          <tui-icon icon="@tui.bell" />
+          @if (unreadCount() > 0) {
+            <span class="nav__badge bell__badge" aria-hidden="true">{{
+              unreadCount() > 99 ? '99+' : unreadCount()
+            }}</span>
+          }
+        </button>
+
         <details class="account">
           <summary class="account__trigger">
             <span class="account__monogram" aria-hidden="true">{{

@@ -228,6 +228,41 @@
   }
 }
 
+.bell {
+  position: relative;
+  display: inline-grid;
+  inline-size: 40px;
+  block-size: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--anion-radius-md);
+  background: transparent;
+  color: rgb(255 255 255 / 76%);
+  cursor: pointer;
+  outline: none;
+  transition: background-color var(--anion-duration-base) ease,
+    border-color var(--anion-duration-base) ease;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--anion-accent-a45);
+    background: var(--anion-accent-a15);
+  }
+
+  tui-icon {
+    inline-size: var(--anion-icon-20);
+    block-size: var(--anion-icon-20);
+  }
+}
+
+.bell__badge {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  margin: 0;
+}
+
 // Пока bootstrap-запрос `GET /user` не ответил, на месте аккаунта держится
 // заглушка тех же размеров: иначе шапка дёргалась бы на каждом старте, а
 // «Войти» на секунду показывалось бы уже вошедшему.

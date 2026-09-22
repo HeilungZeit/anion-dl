@@ -14,7 +14,9 @@ import { TuiIcon } from '@taiga-ui/core';
 
 import { SITE_BASE_URL } from '../api/api.config';
 import { BookmarksService } from '../api/bookmarks.service';
+import { ensureNoticePermission } from '../api/download-notice';
 import { DownloadService } from '../api/download.service';
+import { NotificationsService } from '../api/notifications.service';
 import { RemoteWatchProgressService } from '../api/remote-watch-progress.service';
 import { UpdateService } from '../api/update.service';
 import { UserService } from '../api/user.service';
@@ -47,7 +49,9 @@ export class ShellLayoutComponent implements OnInit {
   // случайно зайдёт на страницу загрузок.
   private readonly downloads = inject(DownloadService);
   private readonly playerWindows = inject(PlayerWindowService);
+  private readonly notifications = inject(NotificationsService);
 
+  readonly unreadCount = this.notifications.unreadCount;
   readonly pendingCount = computed(() => this.downloads.pending().length);
 
   constructor() {
@@ -91,6 +95,18 @@ export class ShellLayoutComponent implements OnInit {
     // Сессия живёт в куке httpOnly, и увидеть её из JS нельзя. Единственный
     // способ узнать, вошли мы или нет, — спросить бэк при старте.
     void this.users.fetchUser();
+
+    this.notifications.start();
+  }
+
+  /**
+   * Уведомления читаются на сайте. Клик по колокольчику — момент, когда
+   * человек сам интересуется уведомлениями, поэтому разрешение на системные
+   * уведомления спрашиваем здесь, а не при запуске.
+   */
+  async openNotifications(): Promise<void> {
+    await ensureNoticePermission();
+    await openUrl(`${SITE_BASE_URL}/notifications`);
   }
 
   /** Правка профиля живёт на сайте: в десктопе ей делать нечего. */
@@ -104,6 +120,7 @@ export class ShellLayoutComponent implements OnInit {
     await this.users.logout();
     this.bookmarks.clear();
     this.remoteProgress.clear();
+    this.notifications.clear();
   }
 
   @HostListener('document:keydown', ['$event'])
