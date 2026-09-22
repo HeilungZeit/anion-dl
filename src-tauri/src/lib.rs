@@ -4,6 +4,7 @@ mod kodik;
 // pub, чтобы резолвер можно было прогнать из examples/resolve_probe.rs без
 // кликов по нативному окну.
 pub mod resolver;
+mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
+        .setup(|app| Ok(window::create_main(app)?))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
