@@ -1,0 +1,139 @@
+// Шапка, кнопка и пустое состояние — как на странице загрузок, чтобы
+// личные разделы приложения выглядели одинаково.
+.page {
+  inline-size: 100%;
+  max-inline-size: 760px;
+  margin-inline: auto;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--anion-space-16);
+  margin-block-end: var(--anion-space-24);
+  padding-block-end: var(--anion-space-20);
+  border-block-end: 1px solid var(--anion-border);
+}
+
+.head__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-16);
+
+  h1 {
+    margin: var(--anion-space-2) 0 0;
+    font-size: var(--anion-font-size-28);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+  }
+
+  p {
+    margin: var(--anion-space-4) 0 0;
+    color: var(--anion-text-secondary);
+    font-size: var(--anion-font-size-13);
+  }
+}
+
+.head__accent {
+  inline-size: 4px;
+  block-size: 60px;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-accent);
+  box-shadow: 0 0 16px var(--anion-accent-a45);
+}
+
+.head__eyebrow {
+  color: var(--anion-accent-text);
+  font-size: var(--anion-font-size-11);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 36px;
+  padding-inline: var(--anion-space-12);
+  border: 1px solid var(--anion-border);
+  border-radius: var(--anion-radius-md);
+  background: var(--anion-surface-2);
+  color: var(--anion-text-primary);
+  cursor: pointer;
+  font-size: var(--anion-font-size-12);
+  font-weight: 600;
+  outline: none;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--anion-duration-base) ease,
+    border-color var(--anion-duration-base) ease;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--anion-accent-a60);
+    background: var(--anion-accent-a15);
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+.empty {
+  display: flex;
+  min-block-size: 360px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: var(--anion-space-32);
+  border: 1px dashed var(--anion-border);
+  border-radius: var(--anion-radius-xl);
+  background: linear-gradient(145deg, var(--anion-surface-2), var(--anion-surface-1));
+  text-align: center;
+
+  strong {
+    margin-block-start: var(--anion-space-16);
+    font-size: var(--anion-font-size-20);
+    font-weight: 600;
+  }
+
+  p {
+    max-inline-size: 48ch;
+    margin: var(--anion-space-8) 0 var(--anion-space-20);
+    color: var(--anion-text-secondary);
+    font-size: var(--anion-font-size-13);
+  }
+
+  a {
+    padding: var(--anion-space-10) var(--anion-space-16);
+    border-radius: var(--anion-radius-md);
+    background: linear-gradient(135deg, var(--anion-accent-hover), var(--anion-accent-active));
+    color: white;
+    font-size: var(--anion-font-size-13);
+    font-weight: 600;
+    outline: none;
+    text-decoration: none;
+    box-shadow: var(--anion-shadow-accent-glow);
+
+    &:focus-visible {
+      box-shadow: var(--anion-focus-ring), var(--anion-shadow-accent-glow);
+    }
+  }
+}
+
+.list {
+  display: grid;
+  gap: var(--anion-space-4);
+}
+
+.sentinel {
+  block-size: 1px;
+}
+
+.loading {
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+  text-align: center;
+}

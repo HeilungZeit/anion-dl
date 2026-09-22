@@ -1,0 +1,46 @@
+<div class="page">
+  <header class="head">
+    <div class="head__heading">
+      <span class="head__accent" aria-hidden="true"></span>
+      <div>
+        <span class="head__eyebrow">Подписки</span>
+        <h1>Уведомления</h1>
+        <p>Новые серии тайтлов, на которые вы подписались. Хранятся 30 дней.</p>
+      </div>
+    </div>
+
+    @if (notifications.unreadCount() > 0) {
+      <button type="button" class="action" (click)="notifications.markAllRead()">
+        Прочитать все
+      </button>
+    }
+  </header>
+
+  @if (notifications.items().length > 0) {
+    <div class="list">
+      @for (item of notifications.items(); track item.id) {
+        <app-notification-item
+          [notification]="item"
+          (opened)="openNotification($event)"
+        />
+      }
+    </div>
+
+    @if (notifications.nextCursor() !== null) {
+      <div #sentinel class="sentinel" aria-hidden="true"></div>
+    }
+  } @else if (notifications.isLoaded()) {
+    <div class="empty">
+      <strong>Уведомлений пока нет</strong>
+      <p>
+        Откройте онгоинг или анонс и нажмите «Уведомлять о новых сериях» —
+        сюда придёт каждая новая серия.
+      </p>
+      <a routerLink="/catalog">Перейти в каталог</a>
+    </div>
+  }
+
+  @if (notifications.isLoading()) {
+    <p class="loading">Загрузка…</p>
+  }
+</div>

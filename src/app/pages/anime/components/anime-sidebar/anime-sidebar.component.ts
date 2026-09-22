@@ -18,6 +18,7 @@ import {
 import type { Anime } from '../../../../api/anime.types';
 import { BookmarksService } from '../../../../api/bookmarks.service';
 import { UserService } from '../../../../api/user.service';
+import { SubscribeButtonComponent } from '../subscribe-button/subscribe-button.component';
 
 const STATUSES: readonly { value: BookmarkStatusValue; label: string }[] = [
   { value: BookmarkStatus.Watching, label: 'Смотрю' },
@@ -29,7 +30,7 @@ const STATUSES: readonly { value: BookmarkStatusValue; label: string }[] = [
 
 @Component({
   selector: 'app-anime-sidebar',
-  imports: [TuiButton, TuiDropdown, TuiIcon],
+  imports: [TuiButton, TuiDropdown, TuiIcon, SubscribeButtonComponent],
   templateUrl: './anime-sidebar.component.html',
   styleUrl: './anime-sidebar.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

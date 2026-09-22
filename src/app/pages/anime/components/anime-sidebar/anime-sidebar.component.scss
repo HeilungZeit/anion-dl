@@ -78,3 +78,9 @@ small {
   color: var(--anion-negative-text);
   line-height: 1.35;
 }
+
+// У вышедших тайтлов кнопки подписки нет — пустой хост не должен давать
+// лишний отступ в колонке.
+app-subscribe-button:empty {
+  display: none;
+}

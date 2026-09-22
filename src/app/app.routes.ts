@@ -64,6 +64,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'notifications',
+    title: 'Уведомления — Anion Flow',
+    loadComponent: () =>
+      import('./pages/notifications/notifications.component').then(
+        (m) => m.NotificationsComponent
+      ),
+  },
+  {
     path: 'schedule',
     title: 'Расписание — Anion Flow',
     loadComponent: () =>

@@ -245,7 +245,8 @@
     border-color var(--anion-duration-base) ease;
 
   &:hover,
-  &:focus-visible {
+  &:focus-visible,
+  &--open {
     border-color: var(--anion-accent-a45);
     background: var(--anion-accent-a15);
   }
@@ -253,6 +254,70 @@
   tui-icon {
     inline-size: var(--anion-icon-20);
     block-size: var(--anion-icon-20);
+  }
+}
+
+.notifications-menu {
+  display: flex;
+  inline-size: 360px;
+  max-block-size: min(520px, calc(100vh - 96px));
+  flex-direction: column;
+  padding: var(--anion-space-6);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.notifications-menu__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--anion-space-8);
+  margin-block-end: var(--anion-space-4);
+  padding: var(--anion-space-8) var(--anion-space-10) var(--anion-space-10);
+  border-block-end: 1px solid var(--anion-border);
+
+  strong {
+    font-size: var(--anion-font-size-14);
+  }
+}
+
+.notifications-menu__read-all {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--anion-accent-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--anion-font-size-12);
+}
+
+.notifications-menu__empty {
+  margin: 0;
+  padding: var(--anion-space-12) var(--anion-space-10);
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-13);
+}
+
+.notifications-menu__all {
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-8);
+  margin-block-start: var(--anion-space-4);
+  padding: var(--anion-space-10);
+  border-block-start: 1px solid var(--anion-border);
+  color: var(--anion-text-primary);
+  font-size: var(--anion-font-size-14);
+  outline: none;
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-surface-3);
+  }
+
+  tui-icon {
+    font-size: var(--anion-icon-16);
+    color: var(--anion-text-secondary);
   }
 }
 

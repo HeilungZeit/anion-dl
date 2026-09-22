@@ -1,0 +1,69 @@
+:host {
+  display: block;
+}
+
+.notification {
+  display: flex;
+  padding: var(--anion-space-10);
+  align-items: flex-start;
+  gap: var(--anion-space-12);
+  border-radius: var(--anion-radius-sm);
+  color: var(--anion-text-primary);
+  outline: none;
+  text-decoration: none;
+  transition: background-color var(--anion-duration-fast) ease;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-surface-3);
+  }
+}
+
+.notification__poster {
+  flex: 0 0 auto;
+  inline-size: 42px;
+  block-size: 58px;
+  border-radius: var(--anion-radius-sm);
+  background: var(--anion-surface-3);
+  object-fit: cover;
+}
+
+.notification__body {
+  display: grid;
+  min-inline-size: 0;
+  flex: 1;
+  gap: var(--anion-space-2);
+}
+
+.notification__title {
+  font-size: var(--anion-font-size-14);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.notification--unread .notification__title {
+  font-weight: 700;
+}
+
+.notification__dubbings {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-12);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.notification__date {
+  color: var(--anion-text-secondary);
+  font-size: var(--anion-font-size-12);
+}
+
+.notification__dot {
+  flex: 0 0 auto;
+  inline-size: var(--anion-space-8);
+  block-size: var(--anion-space-8);
+  margin-block-start: var(--anion-space-6);
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-accent);
+}

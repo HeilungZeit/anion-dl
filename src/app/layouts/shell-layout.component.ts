@@ -10,13 +10,17 @@ import {
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { TuiIcon } from '@taiga-ui/core';
+import { TuiDropdown, TuiIcon } from '@taiga-ui/core';
 
 import { SITE_BASE_URL } from '../api/api.config';
 import { BookmarksService } from '../api/bookmarks.service';
 import { ensureNoticePermission } from '../api/download-notice';
 import { DownloadService } from '../api/download.service';
-import { NotificationsService } from '../api/notifications.service';
+import {
+  type AppNotification,
+  NotificationsService,
+} from '../api/notifications.service';
+import { NotificationItemComponent } from '../components/notification-item/notification-item.component';
 import { RemoteWatchProgressService } from '../api/remote-watch-progress.service';
 import { UpdateService } from '../api/update.service';
 import { UserService } from '../api/user.service';
@@ -32,7 +36,14 @@ import { PlayerWindowService } from '../windows/player-window.service';
  */
 @Component({
   selector: 'app-shell-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, TuiIcon],
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    TuiDropdown,
+    TuiIcon,
+    NotificationItemComponent,
+  ],
   templateUrl: './shell-layout.component.html',
   styleUrl: './shell-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -49,9 +60,14 @@ export class ShellLayoutComponent implements OnInit {
   // случайно зайдёт на страницу загрузок.
   private readonly downloads = inject(DownloadService);
   private readonly playerWindows = inject(PlayerWindowService);
-  private readonly notifications = inject(NotificationsService);
+  readonly notifications = inject(NotificationsService);
 
   readonly unreadCount = this.notifications.unreadCount;
+  /** В выпадающем списке — только свежие, остальное на странице уведомлений. */
+  readonly latestNotifications = computed(() =>
+    this.notifications.items().slice(0, 8)
+  );
+  notificationsOpen = false;
   readonly pendingCount = computed(() => this.downloads.pending().length);
 
   constructor() {
@@ -100,13 +116,22 @@ export class ShellLayoutComponent implements OnInit {
   }
 
   /**
-   * Уведомления читаются на сайте. Клик по колокольчику — момент, когда
-   * человек сам интересуется уведомлениями, поэтому разрешение на системные
+   * Список всегда свежий: пока колокольчик был закрыт, бэк мог создать
+   * уведомления или дописать озвучки. Открытие колокольчика — момент, когда
+   * человек сам интересуется уведомлениями, поэтому и разрешение на системные
    * уведомления спрашиваем здесь, а не при запуске.
    */
-  async openNotifications(): Promise<void> {
-    await ensureNoticePermission();
-    await openUrl(`${SITE_BASE_URL}/notifications`);
+  onNotificationsOpenChange(open: boolean): void {
+    this.notificationsOpen = open;
+    if (open) {
+      void this.notifications.reload();
+      void ensureNoticePermission();
+    }
+  }
+
+  openNotification(notification: AppNotification): void {
+    this.notificationsOpen = false;
+    void this.notifications.markRead(notification.id);
   }
 
   /** Правка профиля живёт на сайте: в десктопе ей делать нечего. */

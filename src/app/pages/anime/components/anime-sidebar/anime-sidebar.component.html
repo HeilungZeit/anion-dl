@@ -43,6 +43,11 @@
     </div>
   </ng-template>
 
+  <app-subscribe-button
+    [animeId]="anime().animeId"
+    [statusAlias]="anime().animeStatus.alias"
+  />
+
   @if (error()) {
     <small role="alert">{{ error() }}</small>
   }

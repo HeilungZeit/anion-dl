@@ -1,0 +1,43 @@
+<a
+  class="notification"
+  [class.notification--unread]="!notification().read"
+  [routerLink]="['/anime', notification().animeId]"
+  (click)="opened.emit(notification())"
+>
+  @if (notification().poster) {
+    <img
+      class="notification__poster"
+      [src]="notification().poster"
+      alt=""
+      width="42"
+      height="58"
+      loading="lazy"
+    />
+  } @else {
+    <span class="notification__poster" aria-hidden="true"></span>
+  }
+
+  <span class="notification__body">
+    @if (notification().type === 'new_episode') {
+      <strong class="notification__title"
+        >Вышла {{ notification().episode }} серия: {{ notification().title }}</strong
+      >
+      @if (notification().dubbings.length) {
+        <span class="notification__dubbings">{{
+          notification().dubbings.join(', ')
+        }}</span>
+      }
+    } @else {
+      <strong class="notification__title"
+        >{{ notification().title }} вышло полностью, подписка снята</strong
+      >
+    }
+    <time class="notification__date" [attr.datetime]="notification().createdAt">{{
+      date()
+    }}</time>
+  </span>
+
+  @if (!notification().read) {
+    <span class="notification__dot" aria-label="Не прочитано"></span>
+  }
+</a>
