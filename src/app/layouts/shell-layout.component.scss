@@ -257,13 +257,13 @@
   }
 }
 
+// Высоту и скролл держит сам tui-dropdown (tui-scrollbar + tuiDropdownMaxHeight
+// с поджатием под окно). Свой overflow здесь давал вложенный второй скроллер.
 .notifications-menu {
   display: flex;
   inline-size: 360px;
-  max-block-size: min(520px, calc(100vh - 96px));
   flex-direction: column;
   padding: var(--anion-space-6);
-  overflow-y: auto;
   box-sizing: border-box;
 }
 

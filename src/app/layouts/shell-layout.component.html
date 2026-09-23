@@ -70,6 +70,7 @@
           type="button"
           [class.bell--open]="notificationsOpen"
           [tuiDropdown]="notificationsMenu"
+          [tuiDropdownMaxHeight]="520"
           [tuiDropdownOpen]="notificationsOpen"
           (tuiDropdownOpenChange)="onNotificationsOpenChange($event)"
           [attr.aria-expanded]="notificationsOpen"
