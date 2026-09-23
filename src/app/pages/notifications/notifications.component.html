@@ -1,46 +1,68 @@
-<div class="page">
-  <header class="head">
-    <div class="head__heading">
-      <span class="head__accent" aria-hidden="true"></span>
-      <div>
-        <span class="head__eyebrow">Подписки</span>
-        <h1>Уведомления</h1>
-        <p>Новые серии тайтлов, на которые вы подписались. Хранятся 30 дней.</p>
-      </div>
+<div class="notifications-page">
+  <header class="notifications-hero">
+    <div class="notifications-hero__icon" aria-hidden="true">
+      <tui-icon [icon]="notifications.unreadCount() ? '@tui.bell-ring' : '@tui.bell'" />
     </div>
-
+    <div class="notifications-hero__copy">
+      <span class="notifications-hero__eyebrow">Новые серии</span>
+      <h1>Уведомления</h1>
+      <p>Приходят по тайтлам, на которые вы подписались на странице аниме, и хранятся 30 дней</p>
+    </div>
     @if (notifications.unreadCount() > 0) {
-      <button type="button" class="action" (click)="notifications.markAllRead()">
-        Прочитать все
-      </button>
+      <div class="notifications-hero__side">
+        <div class="notifications-hero__count">
+          <strong>{{ notifications.unreadCount() }}</strong>
+          <span>непрочитанных</span>
+        </div>
+        <button
+          tuiButton
+          type="button"
+          appearance="secondary"
+          size="s"
+          iconStart="@tui.check-check"
+          (click)="notifications.markAllRead()"
+        >
+          Прочитать все
+        </button>
+      </div>
     }
   </header>
 
-  @if (notifications.items().length > 0) {
-    <div class="list">
-      @for (item of notifications.items(); track item.id) {
-        <app-notification-item
-          [notification]="item"
-          (opened)="openNotification($event)"
-        />
+  <div class="notifications-feed">
+    @for (group of groups(); track group.date) {
+      <section class="notifications-group">
+        <h2 class="notifications-group__title">{{ group.label }}</h2>
+        <div class="notifications-group__list">
+          @for (item of group.items; track item.id) {
+            <app-notification-item
+              variant="card"
+              [notification]="item"
+              (opened)="openNotification($event)"
+            />
+          }
+        </div>
+      </section>
+    } @empty {
+      @if (notifications.isLoaded()) {
+        <div class="empty-state">
+          <div class="empty-state__icon" aria-hidden="true">
+            <tui-icon icon="@tui.bell-off" />
+          </div>
+          <h3>Уведомлений пока нет</h3>
+          <p>Откройте онгоинг или анонс и нажмите «Уведомлять о новых сериях» — сюда придёт весть о каждой новой серии.</p>
+          <a tuiButton appearance="primary" routerLink="/catalog">
+            <tui-icon icon="@tui.layout-grid" />
+            Перейти в каталог
+          </a>
+        </div>
       }
-    </div>
-
-    @if (notifications.nextCursor() !== null) {
-      <div #sentinel class="sentinel" aria-hidden="true"></div>
     }
-  } @else if (notifications.isLoaded()) {
-    <div class="empty">
-      <strong>Уведомлений пока нет</strong>
-      <p>
-        Откройте онгоинг или анонс и нажмите «Уведомлять о новых сериях» —
-        сюда придёт каждая новая серия.
-      </p>
-      <a routerLink="/catalog">Перейти в каталог</a>
-    </div>
-  }
+  </div>
 
+  @if (notifications.nextCursor() !== null) {
+    <div #sentinel class="notifications-page__sentinel" aria-hidden="true"></div>
+  }
   @if (notifications.isLoading()) {
-    <p class="loading">Загрузка…</p>
+    <tui-loader class="notifications-page__loader" />
   }
 </div>
