@@ -42,13 +42,22 @@ describe('концовка', () => {
     expect(skip.visibleSkip(DURATION - 1, DURATION)?.kind).toBe('ending');
   });
 
-  test('ранний тайминг ending не показывает следующую серию раньше хвоста', () => {
+  test('с таймингом эндинга кнопка видна от его начала до конца серии', () => {
     const skip = new SkipController({ ending: 12 * 60 });
     const duration = 24 * 60;
 
-    expect(skip.visibleSkip(12 * 60, duration)).toBeNull();
-    expect(skip.visibleSkip(21 * 60, duration)).toBeNull();
-    expect(skip.visibleSkip(22 * 60, duration)?.kind).toBe('ending');
+    expect(skip.visibleSkip(12 * 60 - 1, duration)).toBeNull();
+    expect(skip.visibleSkip(12 * 60, duration)?.kind).toBe('ending');
+    expect(skip.visibleSkip(duration - 1, duration)?.kind).toBe('ending');
+    expect(skip.visibleSkip(duration, duration)).toBeNull();
+  });
+
+  test('тайминг эндинга за концом серии не прячет хвост', () => {
+    const skip = new SkipController({ ending: 2000 });
+
+    expect(skip.visibleSkip(DURATION - TAIL_SECONDS, DURATION)?.kind).toBe(
+      'ending'
+    );
   });
 
   test('у последней серии не показывается: вести некуда', () => {

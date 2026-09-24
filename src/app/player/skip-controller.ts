@@ -15,7 +15,7 @@ import type { VideoSkips } from '../api/anime.types';
  */
 export const DEFAULT_WINDOW_SECONDS = 90;
 
-/** Хвост серии, в котором кнопка следующей серии видна всегда. */
+/** Хвост серии, в котором видна кнопка следующей серии, если начало эндинга неизвестно. */
 export const TAIL_SECONDS = 2 * 60;
 
 export interface Segment {
@@ -74,17 +74,20 @@ export class SkipController {
     const duration = durationSecs > 0 ? Math.floor(durationSecs) : 0;
 
     if (duration > 0) {
-      const tailStart = Math.max(duration - TAIL_SECONDS, 0);
-      if (position >= tailStart && position < duration) {
+      // Известное начало эндинга — оттуда и до конца серии. Без него (или с
+      // таймингом за пределами серии) кнопка живёт в двухминутном хвосте.
+      const endingStart =
+        this.ending && this.ending.startSeconds < duration
+          ? this.ending.startSeconds
+          : Math.max(duration - TAIL_SECONDS, 0);
+
+      if (position >= endingStart && position < duration) {
         return {
-          segment: { startSeconds: tailStart, stopSeconds: duration },
+          segment: { startSeconds: endingStart, stopSeconds: duration },
           kind: 'ending',
         };
       }
 
-      // При известной длительности это строго хвост в две минуты. Поле
-      // skips.ending у API встречается заметно раньше настоящей концовки и не
-      // должно преждевременно показывать переход на следующую серию.
       return null;
     }
 

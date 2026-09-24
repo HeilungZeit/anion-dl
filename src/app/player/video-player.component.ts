@@ -390,6 +390,11 @@ export class VideoPlayerComponent {
   private generation = 0;
   private refreshing = false;
   private expectResume = false;
+  /**
+   * Конец серии уже обработан. Он приходит двумя путями — событием `ended`
+   * и от hls.js, — и второй не должен перезапускать отсчёт.
+   */
+  private endHandled = false;
   private scrubbing = false;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   /** Последнее движение мыши: таймер скрытия сверяется с ним, а не перезаводится. */
@@ -700,6 +705,16 @@ export class VideoPlayerComponent {
       hls.on(Hls.Events.MANIFEST_PARSED, () =>
         this.onReady(video, positionSecs, resume)
       );
+      // WKWebView может застрять в долях секунды от конца потока и не прислать
+      // `ended`: без этого не было ни отсчёта до следующей серии, ни отметки
+      // досмотра, а серия начиналась заново. hls.js такой застой распознаёт
+      // сам. Паузу ставим явно, чтобы вебвью не продолжил играть с начала.
+      hls.on(Hls.Events.MEDIA_ENDED, (_event, data) => {
+        if (data.stalled && !this.endHandled) {
+          video.pause();
+          this.onEnded();
+        }
+      });
 
       hls.loadSource(manifestUrl);
       hls.attachMedia(video);
@@ -1044,6 +1059,11 @@ export class VideoPlayerComponent {
   }
 
   onEnded(): void {
+    if (this.endHandled) {
+      return;
+    }
+
+    this.endHandled = true;
     this.buffering.set(false);
     this.paused.set(true);
     this.startAutoNext();
@@ -1059,6 +1079,8 @@ export class VideoPlayerComponent {
   }
 
   onPlay(): void {
+    // Повторный запуск после конца — новый просмотр, у которого будет свой конец.
+    this.endHandled = false;
     this.paused.set(false);
     this.mediaSession.setPlaying(true);
     this.syncMediaPosition();
