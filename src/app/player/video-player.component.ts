@@ -22,7 +22,8 @@ import type { VideoSkips } from '../api/anime.types';
 import { ResolverService } from '../api/resolver.service';
 import { currentWindowTarget } from '../windows/current-window';
 import { AutoCloseMenuDirective } from './auto-close-menu.directive';
-import { DEFAULT_QUALITY, QUALITIES, qualityOf } from './manifest-quality';
+import { qualitiesFor } from '../api/video-source';
+import { DEFAULT_QUALITY, qualityOf } from './manifest-quality';
 import {
   MediaSessionBridge,
   type NowPlaying,
@@ -222,17 +223,26 @@ export class VideoPlayerComponent {
 
   readonly requestedQuality = signal<number>(DEFAULT_QUALITY);
   readonly actualQuality = signal<number | null>(null);
-  readonly qualities = QUALITIES;
+  /** У каждого источника свой потолок: 1080p бывает только у CDNVideoHub. */
+  readonly qualities = computed(() => qualitiesFor(this.iframeUrl()));
+  /**
+   * Запрошенное, но не выше потолка источника. Качество просмотра общее:
+   * выбранные на CDNVideoHub 1080p на Kodik означают «лучшее, что есть», а
+   * не повод писать, что 1080p у серии нет.
+   */
+  readonly effectiveQuality = computed(() =>
+    Math.min(this.requestedQuality(), this.qualities()[0])
+  );
   /** Отмечен в меню пункт, который реально играет, а не тот, что просили. */
   readonly shownQuality = computed(
-    () => this.actualQuality() ?? this.requestedQuality()
+    () => this.actualQuality() ?? this.effectiveQuality()
   );
   /**
    * Просили лучше, чем есть у серии. Без пометки выбор 720p на серии без
    * 720p выглядел так, будто клик просто не сработал.
    */
   readonly qualityNote = computed(() => {
-    const requested = this.requestedQuality();
+    const requested = this.effectiveQuality();
     const actual = this.actualQuality();
 
     // Пока идёт смена, запрошенное уже новое, а играет ещё старое. Без этой
@@ -595,7 +605,7 @@ export class VideoPlayerComponent {
 
     try {
       await this.qualityRestored;
-      const manifest = await this.resolver.resolveManifest(
+      const manifest = await this.resolver.resolvePlayback(
         iframeUrl,
         this.requestedQuality()
       );
@@ -903,7 +913,7 @@ export class VideoPlayerComponent {
       // играющая серия продолжит играть, а стоявшая на паузе — стоять.
       const resume = video ? !video.paused : this.hasStarted();
 
-      const manifest = await this.resolver.resolveManifest(
+      const manifest = await this.resolver.resolvePlayback(
         this.iframeUrl(),
         this.requestedQuality()
       );
@@ -1352,7 +1362,7 @@ export class VideoPlayerComponent {
    */
   changeQuality(quality: number): void {
     const same =
-      quality === this.shownQuality() && quality === this.requestedQuality();
+      quality === this.shownQuality() && quality === this.effectiveQuality();
     if (same || this.switchingQuality()) {
       return;
     }
@@ -1383,8 +1393,13 @@ export class VideoPlayerComponent {
       }
 
       // Нужного качества нет, Rust вернул тот же поток — перезапускать нечего,
-      // о недоступности скажет пометка в меню.
-      if (manifest === this.manifestUrl) {
+      // о недоступности скажет пометка в меню. Адрес прокси при каждом
+      // резолве новый (новый токен), поэтому для него сравнивается высота.
+      const current = qualityOf(this.manifestUrl);
+      if (
+        manifest === this.manifestUrl ||
+        (current !== null && qualityOf(manifest) === current)
+      ) {
         this.switchingQuality.set(false);
         return;
       }

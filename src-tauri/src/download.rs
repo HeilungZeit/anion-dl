@@ -11,6 +11,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
+use crate::resolver::Stream;
+
 /// Живые процессы ffmpeg по id задачи.
 ///
 /// Нужен, потому что отменить загрузку можно только убив процесс: из JS ручку
@@ -64,9 +66,8 @@ pub struct DownloadReport {
 pub async fn download_episode(
     app: AppHandle,
     task_id: String,
-    manifest_url: String,
+    stream: Stream,
     output_path: String,
-    referer: String,
 ) -> Result<DownloadReport, String> {
     // Папку создаём здесь, а не в UI: раскладка по подпапкам означает, что
     // каталог аниме до первой серии не существует, а ffmpeg сам его не заведёт —
@@ -82,7 +83,7 @@ pub async fn download_episode(
         .map_err(|error| format!("Сайдкар ffmpeg не найден: {error}"))?;
 
     let (mut rx, child) = sidecar
-        .args(build_args(&manifest_url, &output_path, &referer))
+        .args(build_args(&stream, &output_path))
         .spawn()
         .map_err(|error| format!("Не удалось запустить ffmpeg: {error}"))?;
 
@@ -206,11 +207,21 @@ pub fn cancel_download(downloads: State<'_, Downloads>, task_id: String) -> Resu
     }
 }
 
-fn build_args(manifest_url: &str, output_path: &str, referer: &str) -> Vec<String> {
-    vec![
-        // Referer нужен: CDN отдаёт сегменты только с ним.
-        "-headers".into(),
-        format!("Referer: {referer}\r\n"),
+fn build_args(stream: &Stream, output_path: &str) -> Vec<String> {
+    let mut args = Vec::new();
+
+    // Referer нужен Kodik: его CDN отдаёт сегменты только с ним.
+    if let Some(referer) = &stream.referer {
+        args.extend(["-headers".into(), format!("Referer: {referer}\r\n")]);
+    }
+
+    // UA нужен CDNVideoHub: подпись выдана под класс UA резолва, и штатный
+    // `Lavf/…` получает 400 уже на плейлисте.
+    if let Some(user_agent) = &stream.user_agent {
+        args.extend(["-user_agent".into(), user_agent.clone()]);
+    }
+
+    args.extend([
         // Ретраи протокола: работают ВНУТРИ одного запроса за сегмент —
         // оборвалось соединение, переподключились. Наблюдалось вживую —
         // таймаут одного из хостов CDN стоил 12 кадров из 600 при коде
@@ -247,7 +258,7 @@ fn build_args(manifest_url: &str, output_path: &str, referer: &str) -> Vec<Strin
         "-seg_max_retry".into(),
         "10".into(),
         "-i".into(),
-        manifest_url.into(),
+        stream.url.clone(),
         // Явные -map, иначе при нескольких аудиодорожках ffmpeg может выбрать
         // не ту озвучку.
         "-map".into(),
@@ -269,7 +280,9 @@ fn build_args(manifest_url: &str, output_path: &str, referer: &str) -> Vec<Strin
         "-nostats".into(),
         "-y".into(),
         output_path.into(),
-    ]
+    ]);
+
+    args
 }
 
 /// Ворчание декодера на стыках потока.

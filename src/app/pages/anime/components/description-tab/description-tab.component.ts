@@ -24,6 +24,7 @@ import {
   RemoteWatchProgressService,
 } from '../../../../api/remote-watch-progress.service';
 import { UserService } from '../../../../api/user.service';
+import { isCvhDubbing, voiceOf } from '../../../../api/video-source';
 import {
   resumeEpisodeFor,
   WatchProgressService,
@@ -44,9 +45,9 @@ const SUBTITLES_PREFIX = 'субтитры';
  *
  * Композиция и логика повторяют блок плеера на anion.online — панель над
  * кадром, группы «Озвучки»/«Субтитры» с числом серий, полоса просмотра и лента
- * эпизодов. Отличий два: серия играет своим плеером вместо iframe Kodik, и нет
- * выбора плеера — приложение умеет только Kodik, и список из одного пункта был
- * бы шумом.
+ * эпизодов. Отличий два: серия играет своим плеером вместо iframe Kodik, и
+ * отдельного выбора плеера нет — источник виден по группе озвучки
+ * («CDNVideoHub · до 1080p»).
  */
 @Component({
   selector: 'app-description-tab',
@@ -115,7 +116,7 @@ export class DescriptionTabComponent {
   });
 
   readonly anime = input.required<Anime>();
-  /** Все серии Kodik: нужны, чтобы считать эпизоды по каждой озвучке. */
+  /** Все серии обоих источников: нужны, чтобы считать эпизоды по озвучкам. */
   readonly videos = input.required<readonly Video[]>();
   readonly episodes = input.required<readonly Video[]>();
   readonly dubbings = input.required<readonly string[]>();
@@ -137,17 +138,22 @@ export class DescriptionTabComponent {
 
   readonly selectedEpisode = signal<Video | null>(null);
 
-  /** Озвучки и субтитры показываются отдельными группами, как на фронте. */
+  /**
+   * Озвучки и субтитры показываются отдельными группами, как на фронте.
+   * CDNVideoHub — своей группой целиком: там другой потолок качества, и
+   * одноимённые студии двух источников стоят в разных местах списка.
+   */
   readonly dubbersData = computed(() => {
-    const all = this.dubbings();
+    const kodik = this.dubbings().filter((name) => !isCvhDubbing(name));
 
     return {
-      dubbers: all.filter(
+      dubbers: kodik.filter(
         (name) => !name.toLowerCase().startsWith(SUBTITLES_PREFIX)
       ),
-      subtitles: all.filter((name) =>
+      subtitles: kodik.filter((name) =>
         name.toLowerCase().startsWith(SUBTITLES_PREFIX)
       ),
+      cvh: this.dubbings().filter(isCvhDubbing),
     };
   });
 
@@ -423,10 +429,12 @@ export class DescriptionTabComponent {
     });
   }
 
+  /** В группе CDNVideoHub метка источника лишняя — её показывает группа. */
   dubbingLabel(name: string): string {
     const count = this.countByDubbing().get(name) ?? 0;
+    const voice = voiceOf(name);
 
-    return count > 0 ? `${name} (${count} эп.)` : name;
+    return count > 0 ? `${voice} (${count} эп.)` : voice;
   }
 
   select(episode: Video): void {

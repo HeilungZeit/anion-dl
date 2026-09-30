@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { LazyStore } from '@tauri-apps/plugin-store';
 
-import { DEFAULT_QUALITY } from '../player/manifest-quality';
+import { qualityOf } from '../player/manifest-quality';
 import { currentWindowTarget } from '../windows/current-window';
 import {
   ensureNoticePermission,
@@ -28,16 +28,17 @@ const FOLDER_PER_ANIME_KEY = 'folderPerAnime';
  */
 const DEFAULT_FOLDER_PER_ANIME = true;
 
-/**
- * Referer для CDN. Сегменты отдаются только с ним, поэтому он не косметика.
- * Совпадает с origin плеера, а не сайта: страницу мы грузим напрямую с Kodik.
- */
-const CDN_REFERER = 'https://kodikplayer.com/';
-
 // Лестница качеств переехала в player/manifest-quality.ts: её одинаково нужно
 // знать и загрузчику, и плееру. Реэкспорт оставлен, чтобы потребители
 // загрузчика не лезли за константой в чужой модуль.
-export { DEFAULT_QUALITY, QUALITIES } from '../player/manifest-quality';
+export { QUALITIES } from '../player/manifest-quality';
+
+/**
+ * Качество загрузок по умолчанию — потолок, а не обещание: Rust берёт лучшее
+ * доступное не выше него. 1080p есть у CDNVideoHub, Kodik откатится до 720p
+ * ценой одной проверки манифеста. У плеера своё значение по умолчанию.
+ */
+export const DEFAULT_DOWNLOAD_QUALITY = 1080;
 
 /** Текст, которым Rust помечает убитый по отмене процесс. */
 const CANCELLED = 'Отменено';
@@ -70,6 +71,12 @@ export interface DownloadTask {
   sizeBytes: number;
   outputPath: string;
   error: string;
+  /**
+   * Высота кадра, которую реально отдал источник. Известна только после
+   * резолва: запрошенное качество — потолок, и Kodik на 1080p откатится до
+   * 720p. У задач из старых версий и ещё не начатых её нет.
+   */
+  quality?: number | null;
   /** Файл скачан, но ffmpeg ворчал. Не ошибка — задача остаётся успешной. */
   warning: string;
   /**
@@ -175,7 +182,7 @@ export class DownloadService {
   }
 
   async getQuality(): Promise<number> {
-    return (await this.store.get<number>(QUALITY_KEY)) ?? DEFAULT_QUALITY;
+    return (await this.store.get<number>(QUALITY_KEY)) ?? DEFAULT_DOWNLOAD_QUALITY;
   }
 
   async setQuality(quality: number): Promise<void> {
@@ -405,7 +412,7 @@ export class DownloadService {
       // Резолв идёт здесь, а не при постановке в очередь: подписи в URL
       // сегментов протухают, и манифест, добытый впрок для всего сезона, к
       // старту ffmpeg будет мёртв.
-      const manifestUrl = await this.resolver.resolveManifest(
+      const stream = await this.resolver.resolveStream(
         task.iframeUrl,
         await this.getQuality()
       );
@@ -415,13 +422,15 @@ export class DownloadService {
         return;
       }
 
-      this.patch(task.id, { status: 'downloading' });
+      this.patch(task.id, {
+        status: 'downloading',
+        quality: stream.height ?? qualityOf(stream.url),
+      });
 
       const report = await invoke<DownloadReport>('download_episode', {
         taskId: task.id,
-        manifestUrl,
+        stream,
         outputPath: task.outputPath,
-        referer: CDN_REFERER,
       });
 
       this.patch(task.id, { status: 'done', warning: report.warning ?? '' });

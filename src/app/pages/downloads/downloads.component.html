@@ -69,7 +69,12 @@
                 } @else {
                   <strong class="tasks__title">{{ task.title }}</strong>
                 }
-                <span class="tasks__meta">Серия {{ task.episode }} · {{ task.dubbing }}</span>
+                <span class="tasks__meta">
+                  Серия {{ task.episode }} · {{ task.dubbing }}
+                  @if (task.quality) {
+                    · {{ task.quality }}p
+                  }
+                </span>
               </div>
 
               <span class="tasks__status">{{ label(task) }}</span>

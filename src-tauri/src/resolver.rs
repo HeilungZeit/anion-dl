@@ -1,4 +1,9 @@
-//! Добыча URL HLS-манифеста из плеера Kodik.
+//! Добыча URL HLS-манифеста серии.
+//!
+//! Серия адресуется локатором: у Kodik это URL плеера, у CDNVideoHub —
+//! `cvh:<vkId>` (см. [`crate::cvh`]). [`resolve_manifest`] разбирает локатор
+//! и отдаёт [`Stream`] — URL вместе с заголовками, без которых CDN его не
+//! отдаст. Дальше по тексту — о Kodik.
 //!
 //! Основной путь — обычные HTTP-запросы, он живёт в [`crate::kodik`]. Здесь
 //! лежит фолбэк: страница выполняется в скрытом вебвью, а мы подслушиваем её
@@ -14,6 +19,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Префикс, по которому отличаем «наш» заголовок от настоящего title страницы.
@@ -203,24 +209,90 @@ const QUALITY_LADDER: [u32; 4] = [1080, 720, 480, 360];
 /// Referer, без которого CDN не отдаёт ни манифест, ни сегменты.
 pub const CDN_REFERER: &str = "https://kodikplayer.com/";
 
-/// Возвращает URL манифеста по URL плеера.
+/// Поток серии: манифест и заголовки, с которыми его отдаёт CDN.
 ///
-/// Сначала пробуется HTTP-тракт, при его отказе — вебвью. Порядок именно такой:
-/// HTTP отвечает за доли секунды и падает сразу, так что цена неудачной попытки
-/// заметно меньше, чем выигрыш в успешном случае.
+/// Заголовки едут вместе с URL, а не выводятся загрузчиком из хоста: у Kodik
+/// обязателен Referer, у CDNVideoHub — тот же UA, что был при резолве
+/// (подпись привязана к его классу, чужой UA получает 400).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stream {
+    pub url: String,
+    pub referer: Option<String>,
+    pub user_agent: Option<String>,
+    /// Высота кадра, если источник её знает. У Kodik она и так в имени
+    /// манифеста, поэтому `None`.
+    pub height: Option<u32>,
+}
+
+impl Stream {
+    fn kodik(url: String) -> Self {
+        Self {
+            url,
+            referer: Some(CDN_REFERER.into()),
+            user_agent: None,
+            height: None,
+        }
+    }
+
+    /// Нужен ли потоку прокси для просмотра в вебвью.
+    ///
+    /// Вебвью не умеет подставить свой User-Agent в запросы hls.js, а CDN
+    /// CDNVideoHub вдобавок пускает по CORS только свой плеер. Referer Kodik
+    /// прокси не требует: его CDN отдаёт поток вебвью напрямую.
+    fn needs_proxy(&self) -> bool {
+        self.user_agent.is_some()
+    }
+}
+
+/// Возвращает поток по локатору серии.
 ///
-/// `preferred_quality` — желаемая высота кадра. Ключи качеств у Kodik неточны, а
-/// вебвью и вовсе ловит стартовые 360p, поэтому в обоих случаях нужное качество
-/// добирается подменой числа в имени файла (см. [`upgrade_quality`]).
+/// `preferred_quality` — желаемая высота кадра; если такой нет, берётся лучшая
+/// доступная ниже.
 #[tauri::command]
 pub async fn resolve_manifest(
     app: AppHandle,
     iframe_url: String,
     preferred_quality: Option<u32>,
-) -> Result<String, String> {
+) -> Result<Stream, String> {
     let quality = preferred_quality.unwrap_or(DEFAULT_QUALITY);
 
-    let http_error = match crate::kodik::resolve(&iframe_url, quality).await {
+    match iframe_url.strip_prefix(crate::cvh::LOCATOR_PREFIX) {
+        Some(vk_id) => crate::cvh::resolve(vk_id, quality).await,
+        None => resolve_kodik(&app, &iframe_url, quality)
+            .await
+            .map(Stream::kodik),
+    }
+}
+
+/// Адрес потока для плеера: прямой, если вебвью может взять его сам, иначе —
+/// через [`crate::stream_proxy`].
+#[tauri::command]
+pub async fn resolve_playback(
+    app: AppHandle,
+    iframe_url: String,
+    preferred_quality: Option<u32>,
+) -> Result<String, String> {
+    let stream = resolve_manifest(app, iframe_url.clone(), preferred_quality).await?;
+
+    Ok(if stream.needs_proxy() {
+        crate::stream_proxy::register(&iframe_url, stream)
+    } else {
+        stream.url
+    })
+}
+
+/// Манифест Kodik по URL плеера.
+///
+/// Сначала пробуется HTTP-тракт, при его отказе — вебвью. Порядок именно такой:
+/// HTTP отвечает за доли секунды и падает сразу, так что цена неудачной попытки
+/// заметно меньше, чем выигрыш в успешном случае.
+///
+/// Ключи качеств у Kodik неточны, а вебвью и вовсе ловит стартовые 360p,
+/// поэтому в обоих случаях нужное качество добирается подменой числа в имени
+/// файла (см. [`upgrade_quality`]).
+async fn resolve_kodik(app: &AppHandle, iframe_url: &str, quality: u32) -> Result<String, String> {
+    let http_error = match crate::kodik::resolve(iframe_url, quality).await {
         Ok(manifest) => return Ok(manifest),
         Err(error) => error,
     };
@@ -231,7 +303,7 @@ pub async fn resolve_manifest(
     // пришёлся в пустоту), и одна такая осечка роняла всю серию. Повтор стоит
     // минуты ожидания, перекачка — двадцати.
     for _ in 0..RESOLVE_ATTEMPTS {
-        match attempt_resolve(&app, &iframe_url, quality).await {
+        match attempt_resolve(app, iframe_url, quality).await {
             Ok(manifest) => return Ok(manifest),
             Err(error) => last = error,
         }
@@ -249,13 +321,20 @@ pub async fn resolve_manifest(
 
 /// Быстрая смена качества уже найденного потока.
 ///
-/// Подпись общая для соседних манифестов, поэтому повторять GET страницы
-/// плеера и POST на эндпойнт ссылок не требуется.
+/// У Kodik подпись общая для соседних манифестов, поэтому повторять GET
+/// страницы плеера и POST на эндпойнт ссылок не требуется. Поток через прокси
+/// (CDNVideoHub) резолвится заново: это один GET за полсекунды, а URL
+/// вариантов подписаны каждый своей подписью.
 #[tauri::command]
 pub async fn change_manifest_quality(
+    app: AppHandle,
     manifest_url: String,
     preferred_quality: Option<u32>,
 ) -> Result<String, String> {
+    if let Some(locator) = crate::stream_proxy::locator_of(&manifest_url) {
+        return resolve_playback(app, locator, preferred_quality).await;
+    }
+
     Ok(upgrade_quality(manifest_url, preferred_quality.unwrap_or(DEFAULT_QUALITY)).await)
 }
 

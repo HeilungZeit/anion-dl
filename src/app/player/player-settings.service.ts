@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import { LazyStore } from '@tauri-apps/plugin-store';
 
-import { QUALITIES } from './manifest-quality';
+import { parseSource, type VideoSource } from '../api/video-source';
+import { CVH_QUALITIES } from './manifest-quality';
 import { UPSCALE_MODES, type UpscaleMode } from './upscale';
 
 /**
@@ -19,10 +20,21 @@ const VOLUME_KEY = 'volume';
  * смотреть онлайн на слабой сети в 480p и качать в 720p — обычное дело.
  */
 const QUALITY_KEY = 'quality';
+/**
+ * Предпочитаемый источник серий. Отдельной настройки в UI нет: запоминается
+ * источник озвучки, которую человек последней выбрал сам. Живёт здесь, в
+ * настройках просмотра: выбор озвучки на странице тайтла общий для плеера и
+ * загрузок, и второй файл ради одного ключа не нужен.
+ */
+const SOURCE_KEY = 'source';
 
-/** Только качества из меню: старое или поправленное руками значение — мимо. */
+/**
+ * Только качества из меню: старое или поправленное руками значение — мимо.
+ * Сверка с самой длинной лестницей (CDNVideoHub): выбранные там 1080p
+ * сохраняются общими, а на Kodik плеер покажет лучшее, что есть.
+ */
 export function parseQuality(saved: unknown): number | null {
-  return QUALITIES.includes(saved as (typeof QUALITIES)[number])
+  return CVH_QUALITIES.includes(saved as (typeof CVH_QUALITIES)[number])
     ? (saved as number)
     : null;
 }
@@ -74,6 +86,15 @@ export class PlayerSettingsService {
 
   async setQuality(quality: number): Promise<void> {
     await this.store.set(QUALITY_KEY, quality);
+    await this.store.save();
+  }
+
+  async getPreferredSource(): Promise<VideoSource | null> {
+    return parseSource(await this.store.get<unknown>(SOURCE_KEY));
+  }
+
+  async setPreferredSource(source: VideoSource): Promise<void> {
+    await this.store.set(SOURCE_KEY, source);
     await this.store.save();
   }
 

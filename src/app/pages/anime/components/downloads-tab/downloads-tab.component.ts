@@ -16,10 +16,12 @@ import { TuiChevron, TuiDataListWrapper, TuiSelect } from '@taiga-ui/kit';
 
 import type { Poster, Video } from '../../../../api/anime.types';
 import {
-  DEFAULT_QUALITY,
+  DEFAULT_DOWNLOAD_QUALITY,
   DownloadService,
   QUALITIES,
 } from '../../../../api/download.service';
+import { isCvhDubbing } from '../../../../api/video-source';
+import { CVH_QUALITIES } from '../../../../player/manifest-quality';
 
 /**
  * Вкладка «Загрузки»: очередь на скачивание серий в mp4.
@@ -47,7 +49,7 @@ export class DownloadsTabComponent {
 
   readonly animeId = input.required<number>();
   readonly title = input.required<string>();
-  /** Все серии Kodik этого тайтла — нужны, чтобы считать очередь по всем озвучкам. */
+  /** Все серии тайтла из обоих источников — чтобы считать очередь по всем озвучкам. */
   readonly videos = input.required<readonly Video[]>();
   readonly episodes = input.required<readonly Video[]>();
   readonly dubbings = input.required<readonly string[]>();
@@ -74,8 +76,24 @@ export class DownloadsTabComponent {
    */
   readonly onDisk = signal<ReadonlyMap<number, string>>(new Map());
 
-  readonly qualities = QUALITIES;
-  readonly quality = signal<number>(DEFAULT_QUALITY);
+  /**
+   * Качества выбранного источника. 1080p предлагается только там, где он
+   * бывает: у Kodik его почти нет, и пункт обещал бы то, чего не будет.
+   */
+  readonly qualities = computed<readonly number[]>(() =>
+    isCvhDubbing(this.dubbing()) ? CVH_QUALITIES : QUALITIES
+  );
+
+  /** Сохранённое качество — общее для источников и может быть выше потолка. */
+  readonly savedQuality = signal<number>(DEFAULT_DOWNLOAD_QUALITY);
+
+  /**
+   * Что реально получится у выбранного источника. Сохранённые 1080p на Kodik
+   * показываются как 720p — Rust всё равно откатится до лучшего доступного.
+   */
+  readonly quality = computed(() =>
+    Math.min(this.savedQuality(), this.qualities()[0])
+  );
   readonly stringifyQuality = (value: number): string => `${value}p`;
 
   readonly selected = signal<ReadonlySet<number>>(new Set());
@@ -103,7 +121,9 @@ export class DownloadsTabComponent {
       .getOutputDir()
       .then((dir) => this.outputDir.set(dir ?? ''));
 
-    void this.downloads.getQuality().then((value) => this.quality.set(value));
+    void this.downloads
+      .getQuality()
+      .then((value) => this.savedQuality.set(value));
 
     void this.downloads
       .getFolderPerAnime()
@@ -135,7 +155,7 @@ export class DownloadsTabComponent {
   }
 
   async changeQuality(value: number): Promise<void> {
-    this.quality.set(value);
+    this.savedQuality.set(value);
     await this.downloads.setQuality(value);
   }
 
@@ -301,6 +321,11 @@ export class DownloadsTabComponent {
     return (
       status === 'queued' || status === 'resolving' || status === 'downloading'
     );
+  }
+
+  /** Качество, в котором серия качается или скачана, — известно после резолва. */
+  qualityOf(episode: Video): number | null {
+    return this.taskById().get(`${episode.videoId}`)?.quality ?? null;
   }
 
   isFailed(episode: Video): boolean {

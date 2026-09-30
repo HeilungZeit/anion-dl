@@ -126,7 +126,11 @@ export interface Video {
   data: VideoData;
   number: string;
   date: number;
-  /** Готовый URL плеера — именно он уходит в резолвер манифеста на Э2. */
+  /**
+   * Локатор серии для резолвера: URL плеера Kodik или `cvh:<vkId>` у серий
+   * CDNVideoHub. Имя поля историческое — оно сохранено в задачах загрузок и
+   * записях прогресса.
+   */
   iframeUrl: string;
   index: number;
   skips: VideoSkips;

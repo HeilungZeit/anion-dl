@@ -2,7 +2,7 @@
   @if (dubbings().length === 0) {
     <div class="empty">
       <strong>Смотреть нечем</strong>
-      <span>Для этого аниме нет источника Kodik.</span>
+      <span>Для этого аниме нет ни Kodik, ни CDNVideoHub.</span>
     </div>
   } @else {
     <div class="player-container">
@@ -49,6 +49,15 @@
               @if (dubbersData().subtitles.length > 0) {
                 <tui-opt-group label="Субтитры">
                   @for (name of dubbersData().subtitles; track name) {
+                    <button tuiOption type="button" [value]="name">
+                      {{ dubbingLabel(name) }}
+                    </button>
+                  }
+                </tui-opt-group>
+              }
+              @if (dubbersData().cvh.length > 0) {
+                <tui-opt-group label="CDNVideoHub · до 1080p">
+                  @for (name of dubbersData().cvh; track name) {
                     <button tuiOption type="button" [value]="name">
                       {{ dubbingLabel(name) }}
                     </button>

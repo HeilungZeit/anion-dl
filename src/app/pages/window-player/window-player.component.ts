@@ -14,9 +14,11 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { AnimeService } from '../../api/anime.service';
 import type { Video } from '../../api/anime.types';
+import { CvhService } from '../../api/cvh.service';
 import { DownloadService } from '../../api/download.service';
 import { RemoteWatchProgressService } from '../../api/remote-watch-progress.service';
 import { UserService } from '../../api/user.service';
+import { isCvhDubbing, isKodik } from '../../api/video-source';
 import { WatchProgressService } from '../../api/watch-progress.service';
 import { type NowPlaying, sameNowPlaying } from '../../player/media-session';
 import { orderPreviewFrames } from '../../player/preview-frames';
@@ -24,8 +26,6 @@ import {
   type PlaybackProgress,
   VideoPlayerComponent,
 } from '../../player/video-player.component';
-
-const KODIK_PLAYER = 'Kodik';
 
 /**
  * Единственная страница окна плеера: кадр и ничего вокруг.
@@ -44,6 +44,7 @@ const KODIK_PLAYER = 'Kodik';
 })
 export class WindowPlayerComponent {
   private readonly api = inject(AnimeService);
+  private readonly cvh = inject(CvhService);
   private readonly downloads = inject(DownloadService);
   private readonly localProgress = inject(WatchProgressService);
   private readonly remoteProgress = inject(RemoteWatchProgressService);
@@ -70,16 +71,33 @@ export class WindowPlayerComponent {
     loader: ({ params }) => this.api.getById(params.id),
   });
 
+  /**
+   * Серии CDNVideoHub — только когда окно открыто на его озвучке: у бэка их
+   * нет, а ходить во второй источник ради Kodik незачем.
+   */
+  private readonly cvhVideos = resource({
+    params: () => {
+      const dubbing = this.dubbing();
+      const ids = this.animeData.value()?.remoteIds;
+      const malId = ids?.myanimelistId || ids?.shikimoriId;
+
+      return dubbing && isCvhDubbing(dubbing) && malId ? { malId } : undefined;
+    },
+    loader: ({ params }) => this.cvh.videosFor(params.malId),
+  });
+
   readonly taskItem = computed(
     () => this.downloads.tasks().find((item) => item.id === this.task()) ?? null
   );
 
-  /** Только то, что приложение умеет: Kodik и ничего больше. */
+  /** Серии, которые приложение умеет играть: Kodik и CDNVideoHub. */
   private readonly videos = computed<readonly Video[]>(() => {
     const dubbing = this.dubbing();
 
-    return (this.animeData.value()?.videos ?? [])
-      .filter((video) => video.data.player.includes(KODIK_PLAYER))
+    return [
+      ...(this.animeData.value()?.videos.filter(isKodik) ?? []),
+      ...(this.cvhVideos.value() ?? []),
+    ]
       .filter((video) => !dubbing || video.data.dubbing === dubbing)
       .filter((video) => Number(video.number) >= 1)
       .sort((left, right) => Number(left.number) - Number(right.number));
@@ -92,6 +110,7 @@ export class WindowPlayerComponent {
 
     return (
       this.animeData.hasValue() &&
+      !this.cvhVideos.isLoading() &&
       this.localProgress.isInitialized() &&
       this.diskChecked()
     );

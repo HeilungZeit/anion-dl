@@ -17,6 +17,11 @@ describe('qualityOf', () => {
     );
   });
 
+  test('читает высоту из адреса прокси', () => {
+    expect(qualityOf('stream://localhost/0af3/1080p.m3u8')).toBe(1080);
+    expect(qualityOf('http://stream.localhost/0af3/720p.m3u8')).toBe(720);
+  });
+
   test('чужой формат ссылки — null, а не догадка', () => {
     expect(qualityOf('https://cdn/stream/manifest.m3u8')).toBeNull();
   });

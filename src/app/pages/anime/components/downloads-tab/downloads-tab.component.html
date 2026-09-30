@@ -11,7 +11,7 @@
   </header>
 
   @if (dubbings().length === 0) {
-    <div class="empty">Для этого аниме нет источника Kodik — скачать нечем.</div>
+    <div class="empty">Для этого аниме нет ни Kodik, ни CDNVideoHub — скачать нечем.</div>
   } @else {
     <div class="download__controls">
       <label class="download__field">
@@ -47,7 +47,7 @@
           />
           <tui-data-list-wrapper
             *tuiDropdown
-            [items]="qualities"
+            [items]="qualities()"
           />
         </tui-textfield>
       </label>
@@ -131,7 +131,12 @@
             <strong>Серия {{ episode.number }}</strong>
           </label>
 
-          <span class="episodes__meta">{{ dubbing() }}</span>
+          <span class="episodes__meta">
+            {{ dubbing() }}
+            @if (qualityOf(episode); as quality) {
+              · {{ quality }}p
+            }
+          </span>
 
           @if (percent(episode) > 0) {
             <span class="episodes__progress">

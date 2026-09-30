@@ -15,6 +15,12 @@
  */
 export const QUALITIES = [720, 480, 360] as const;
 
+/**
+ * Лестница CDNVideoHub: 1080p там есть почти у всех серий. Ниже 360p не
+ * предлагаем — как и у Kodik.
+ */
+export const CVH_QUALITIES = [1080, 720, 480, 360] as const;
+
 export const DEFAULT_QUALITY = 720;
 
 /**
@@ -26,7 +32,15 @@ export const DEFAULT_QUALITY = 720;
  */
 const QUALITY_IN_NAME = /(\d+)\.mp4:hls:/;
 
+/**
+ * Адрес прокси потока (`stream_proxy.rs`) называет плейлист высотой кадра:
+ * `stream://localhost/<токен>/1080p.m3u8`.
+ */
+const QUALITY_IN_PROXY_NAME = /\/(\d+)p\.m3u8$/;
+
 export function qualityOf(manifestUrl: string): number | null {
-  const digits = QUALITY_IN_NAME.exec(manifestUrl)?.[1];
+  const digits =
+    QUALITY_IN_NAME.exec(manifestUrl)?.[1] ??
+    QUALITY_IN_PROXY_NAME.exec(manifestUrl)?.[1];
   return digits ? Number(digits) : null;
 }

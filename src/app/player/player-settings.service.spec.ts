@@ -27,8 +27,12 @@ describe('parseQuality', () => {
     expect(parseQuality(480)).toBe(480);
   });
 
+  test('keeps 1080p chosen for CDNVideoHub', () => {
+    expect(parseQuality(1080)).toBe(1080);
+  });
+
   test('ignores anything else', () => {
-    expect(parseQuality(1080)).toBeNull();
+    expect(parseQuality(1440)).toBeNull();
     expect(parseQuality('720')).toBeNull();
     expect(parseQuality(undefined)).toBeNull();
   });

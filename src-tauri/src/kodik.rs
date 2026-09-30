@@ -32,7 +32,10 @@ const SITE_REFERER: &str = "https://anion.online/";
 /// UA настоящего браузера. UA вебвью Tauri Kodik принимает, но повторять его в
 /// HTTP-тракте незачем: обычный десктопный Chrome проверен и не привязан к
 /// версии WebKit на машине пользователя.
-const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+///
+/// CDNVideoHub подписывает ссылки под класс UA запроса, поэтому этот же UA
+/// уезжает в ffmpeg вместе с его потоком.
+pub(crate) const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
      AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /// Известный адрес выдачи ссылок. Пробуется первым; при отказе актуальный

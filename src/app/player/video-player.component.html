@@ -277,13 +277,13 @@
           <details class="quality" appAutoCloseMenu>
             <summary class="ghost quality__trigger">
               @if (switchingQuality()) {
-                {{ requestedQuality() }}p…
+                {{ effectiveQuality() }}p…
               } @else {
                 {{ actualQuality() ? actualQuality() + 'p' : 'Качество' }}
               }
             </summary>
             <div class="quality__menu" [class.quality__menu--wide]="qualityNote()">
-              @for (option of qualities; track option) {
+              @for (option of qualities(); track option) {
                 <button
                   class="quality__option"
                   type="button"

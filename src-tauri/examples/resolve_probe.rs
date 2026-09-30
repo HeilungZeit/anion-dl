@@ -5,6 +5,7 @@
 //! результат и выходит.
 //!
 //! cargo run --example resolve_probe -- "https://kodikplayer.com/season/…"
+//! cargo run --example resolve_probe -- "cvh:9956747926256" 1080
 
 fn main() {
     let url = std::env::args().nth(1).unwrap_or_else(|| {
@@ -22,9 +23,11 @@ fn main() {
                 let quality = std::env::args().nth(2).and_then(|value| value.parse().ok());
 
                 match anion_dl_lib::resolver::resolve_manifest(handle.clone(), url, quality).await {
-                    Ok(manifest) => {
+                    Ok(stream) => {
                         println!("OK за {:?}", started.elapsed());
-                        println!("MANIFEST: {manifest}");
+                        println!("MANIFEST: {}", stream.url);
+                        println!("REFERER: {:?}", stream.referer);
+                        println!("USER-AGENT: {:?}", stream.user_agent);
                         handle.exit(0);
                     }
                     Err(error) => {
