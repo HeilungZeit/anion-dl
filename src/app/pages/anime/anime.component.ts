@@ -5,6 +5,7 @@ import {
   effect,
   inject,
   input,
+  linkedSignal,
   resource,
   signal,
   untracked,
@@ -77,7 +78,10 @@ export class AnimeComponent {
     loader: ({ params }) => this.api.getById(params.id),
   });
 
-  readonly tabIndex = signal(0);
+  readonly tabIndex = linkedSignal({
+    source: () => this.id(),
+    computation: () => 0,
+  });
 
   /**
    * Серии CDNVideoHub — второй источник, с 1080p. Ищутся по MAL id: его же

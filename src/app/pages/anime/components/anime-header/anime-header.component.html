@@ -1,38 +1,143 @@
 <header class="head">
-  <div class="head__side">
-    <div class="head__poster-wrap">
-      <img class="head__poster" [src]="anime().poster.big" [alt]="anime().title" />
-      <span class="head__status" [class.head__status--released]="anime().animeStatus.alias === 'released'">
-        {{ anime().animeStatus.title }}
-      </span>
-    </div>
+  <div class="head__backdrop" aria-hidden="true">
+    <img
+      [src]="anime().poster.fullsize || anime().poster.big"
+      alt=""
+      decoding="async"
+      fetchpriority="low"
+    />
+  </div>
+
+  <div class="head__top">
+    <nav class="head__navigation" aria-label="Навигация страницы">
+      <button class="head__back" type="button" aria-label="Назад" title="Назад" (click)="back()">
+        <tui-icon icon="@tui.arrow-left" aria-hidden="true" />
+        <span>Назад</span>
+      </button>
+      <a routerLink="/catalog">Каталог</a>
+      <span aria-hidden="true">/</span>
+      <span>Аниме</span>
+    </nav>
     <app-anime-sidebar [anime]="anime()" />
   </div>
 
-  <div class="head__body">
-    <span class="head__eyebrow">Аниме {{ anime().year }}</span>
-    <h1 class="head__title" data-selectable="true">{{ anime().title }}</h1>
+  <div class="head__overview">
+    <img
+      class="head__poster"
+      width="112"
+      height="158"
+      [src]="anime().poster.big"
+      [alt]="'Постер: ' + anime().title"
+    />
+    <div class="head__body">
+      <div class="head__eyebrow">
+        <span
+          class="head__status"
+          [class.head__status--ongoing]="anime().animeStatus.alias === 'ongoing'"
+          [class.head__status--released]="anime().animeStatus.alias === 'released'"
+        >{{ anime().animeStatus.title }}</span>
+        <span>{{ anime().type.name }} @if (anime().year) { · {{ anime().year }} }</span>
+        @if (anime().rating.average) {
+          <span class="head__rating" [attr.aria-label]="'Оценка: ' + anime().rating.average.toFixed(1)">
+            <tui-icon icon="@tui.star" aria-hidden="true" />
+            {{ anime().rating.average.toFixed(1) }}
+          </span>
+        }
+      </div>
+      <h1 class="head__title" data-selectable="true">{{ anime().title }}</h1>
+      <dl class="head__meta" aria-label="Основные сведения">
+        @if (anime().episodes; as episodes) {
+          <div>
+            <dt>Эпизоды</dt>
+            <dd>{{ episodes.aired || 0 }}@if (episodes.count) { из {{ episodes.count }} } @else { вышло }</dd>
+          </div>
+        }
+        @if (anime().minAge.titleLong) {
+          <div><dt>Возраст</dt><dd>{{ anime().minAge.titleLong }}</dd></div>
+        }
+        @if (anime().original) {
+          <div><dt>Первоисточник</dt><dd>{{ anime().original }}</dd></div>
+        }
+        @if (anime().studios.length > 0) {
+          <div><dt>Студия</dt><dd>@for (studio of anime().studios; track studio.id; let last = $last) { {{ studio.title }}@if (!last) {, } }</dd></div>
+        }
+      </dl>
+      @if (description()) {
+        <div class="head__description">
+          <p
+            class="head__synopsis"
+            [class.head__synopsis--expanded]="descriptionExpanded() || description().length <= 220"
+            [id]="'anime-description-' + anime().animeId"
+            data-selectable="true"
+          >{{ description() }}</p>
+          @if (description().length > 220) {
+            <button
+              class="head__disclosure head__read-more"
+              type="button"
+              [attr.aria-expanded]="descriptionExpanded()"
+              [attr.aria-controls]="'anime-description-' + anime().animeId"
+              (click)="toggleDescription()"
+            >
+              {{ descriptionExpanded() ? 'Свернуть описание' : 'Читать полностью' }}
+              <tui-icon [icon]="descriptionExpanded() ? '@tui.chevron-up' : '@tui.chevron-down'" aria-hidden="true" />
+            </button>
+          }
+        </div>
+      }
+      @if (anime().genres.length > 0) {
+        <div class="head__genres" aria-label="Жанры">
+          @for (genre of anime().genres; track genre.id) {
+            <span>{{ genre.title }}</span>
+          }
+        </div>
+      }
+    </div>
+  </div>
 
-    <div class="head__meta">
-      <span><small>Тип</small><strong>{{ anime().type.name }}</strong></span>
-      <i aria-hidden="true"></i>
-      <span><small>Эпизоды</small><strong>{{ anime().episodes?.aired }} из {{ anime().episodes?.count }}</strong></span>
-      <i aria-hidden="true"></i>
-      <span><small>Оценка</small><strong class="head__rating">★ {{ anime().rating.average.toFixed(1) }}</strong></span>
-      @if (anime().minAge.titleLong) {
-        <i aria-hidden="true"></i>
-        <span><small>Возраст</small><strong>{{ anime().minAge.titleLong }}</strong></span>
+  <div class="head__footer">
+    <div class="head__disclosures">
+      @if (order().length > 0) {
+        <button
+          class="head__disclosure"
+          type="button"
+          [attr.aria-expanded]="orderExpanded()"
+          [attr.aria-controls]="'view-order-items-' + anime().animeId"
+          (click)="toggleOrder()"
+        >
+          Порядок просмотра
+          <tui-icon [icon]="orderExpanded() ? '@tui.chevron-up' : '@tui.chevron-down'" aria-hidden="true" />
+        </button>
+      }
+      @if (nextTitle(); as next) {
+        <a class="head__disclosure" [routerLink]="['/anime', next.animeId]">
+          Следующий тайтл
+          <tui-icon icon="@tui.arrow-right" aria-hidden="true" />
+        </a>
       }
     </div>
 
-    <p class="head__description">{{ anime().description }}</p>
-
-    @if (anime().genres.length > 0) {
-      <div class="head__genres">
-        @for (genre of anime().genres; track genre.id) {
-          <span>{{ genre.title }}</span>
-        }
+    @if (nextEpisode(); as next) {
+      <div class="head__release" title="Дата выхода в Японии; время указано в вашем часовом поясе">
+        <tui-icon icon="@tui.calendar-clock" aria-hidden="true" />
+        <div class="head__release-copy">
+          @if (!next.isReleased) {
+            <time [attr.datetime]="next.datetime">{{ next.date }}</time>
+            <span>Следующая серия · {{ next.timeLeft }}</span>
+          } @else {
+            <span>Новый эпизод</span>
+            <strong>{{ next.timeLeft }}</strong>
+          }
+        </div>
       </div>
     }
   </div>
 </header>
+
+<app-viewing-order [anime]="anime()" [isExpanded]="orderExpanded()" />
+
+@if (otherTitles().length > 0) {
+  <details class="head__other-titles">
+    <summary>Другие названия</summary>
+    <p data-selectable="true">{{ otherTitles().join(' / ') }}</p>
+  </details>
+}

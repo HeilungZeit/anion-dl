@@ -1,0 +1,51 @@
+@if (order().length > 0) {
+  <section class="view-order-container" aria-label="Порядок просмотра">
+    <tui-elastic-container>
+      <div class="order-watch-wrap">
+        <div
+          class="view-order-items"
+          [id]="'view-order-items-' + anime().animeId"
+          [hidden]="!isExpanded()"
+        >
+          @for (title of order(); track title.animeId) {
+            <a
+              class="line-tile"
+              [routerLink]="isCurrentTitle(title.animeId) ? null : ['/anime', title.animeId]"
+              [class.current]="isCurrentTitle(title.animeId)"
+              [attr.aria-current]="isCurrentTitle(title.animeId) ? 'true' : null"
+            >
+              <img
+                class="line-image"
+                width="44"
+                height="62"
+                loading="lazy"
+                [src]="title.poster.small"
+                [alt]="title.title"
+              />
+
+              <span class="line-body">
+                <span class="line-title">{{ title.title }}</span>
+                <span class="line-meta">
+                  <span>{{ title.type.shortname }}</span>
+                  <span class="line-dot" aria-hidden="true">•</span>
+                  <span>{{ title.data.text }}</span>
+                  @if (title.year) {
+                    <span class="line-dot" aria-hidden="true">•</span>
+                    <span>{{ title.year }}</span>
+                  }
+                </span>
+              </span>
+
+              @if (isCurrentTitle(title.animeId)) {
+                <span class="line-badge current-badge">Вы здесь</span>
+              }
+              <span class="line-badge" [class.released]="title.animeStatus.alias === 'released'">
+                {{ title.animeStatus.title }}
+              </span>
+            </a>
+          }
+        </div>
+      </div>
+    </tui-elastic-container>
+  </section>
+}

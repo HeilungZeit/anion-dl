@@ -50,7 +50,7 @@ export class AnimeSidebarComponent {
   readonly currentStatusLabel = computed(
     () =>
       STATUSES.find((status) => status.value === this.bookmark()?.status)
-        ?.label ?? 'Добавить в закладки'
+        ?.label ?? 'В закладки'
   );
   dropdownOpen = false;
 

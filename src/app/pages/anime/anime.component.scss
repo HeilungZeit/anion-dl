@@ -2,18 +2,14 @@
   display: block;
 }
 
-
 .page {
   inline-size: 100%;
   max-inline-size: 1280px;
   margin-inline: auto;
 }
 
-
-
-
 .tabs {
-  margin-block: var(--anion-space-24) var(--anion-space-20);
+  margin-block: var(--anion-space-16);
   border-block-end: 1px solid var(--anion-border-subtle);
 }
 

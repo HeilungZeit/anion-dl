@@ -3,14 +3,15 @@
     tuiButton
     class="bookmark__trigger"
     type="button"
-    appearance="secondary"
-    size="m"
+    [appearance]="bookmark() ? 'secondary' : 'outline-grayscale'"
+    size="s"
+    iconStart="@tui.bookmark"
     iconEnd="@tui.chevron-down"
     [disabled]="saving()"
     [tuiDropdown]="bookmarkMenu"
     [(tuiDropdownOpen)]="dropdownOpen"
   >
-    {{ saving() ? 'Сохраняем…' : currentStatusLabel() }}
+    <span>{{ saving() ? 'Сохраняем…' : currentStatusLabel() }}</span>
   </button>
 
   <ng-template #bookmarkMenu>

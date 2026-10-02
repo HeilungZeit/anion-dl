@@ -18,36 +18,29 @@ import { UserService } from '../../../../api/user.service';
 // снимает с подписки и присылает «вышло полностью».
 const SUBSCRIBABLE_STATUSES = new Set(['ongoing', 'announcement']);
 
-/** «Уведомлять о новых сериях» — как на сайте, под кнопкой закладки. */
+/** Уведомления о новых сериях: компактный колокольчик рядом с закладкой. */
 @Component({
   selector: 'app-subscribe-button',
   imports: [TuiButton, TuiButtonLoading],
   template: `
     @if (visible()) {
       <button
-        tuiButton
+        tuiIconButton
         type="button"
-        size="m"
+        size="s"
         class="subscribe"
         [appearance]="subscribed() ? 'secondary' : 'outline-grayscale'"
         [iconStart]="subscribed() ? '@tui.bell-ring' : '@tui.bell'"
         [loading]="subscribed() === null || busy()"
         [attr.aria-pressed]="subscribed()"
+        [attr.aria-label]="subscribed() ? 'Отключить уведомления о новых сериях' : 'Уведомлять о новых сериях'"
+        [title]="subscribed() ? 'Уведомления о новых сериях включены. Нажмите, чтобы отключить.' : 'Уведомлять о новых сериях'"
         (click)="toggle()"
       >
-        {{ subscribed() ? 'Уведомления включены' : 'Уведомлять о новых сериях' }}
       </button>
     }
   `,
-  styles: `
-    // Кнопка второстепенная: рядом с закладкой она не должна спорить за
-    // внимание. Акцент появляется, только когда подписка включена.
-    .subscribe {
-      inline-size: 100%;
-      font-size: var(--anion-font-size-14);
-      font-weight: 500;
-    }
-  `,
+  styleUrl: './subscribe-button.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SubscribeButtonComponent {

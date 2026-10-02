@@ -186,7 +186,8 @@ export interface Anime extends AnimeDetails {
   viewingOrder: ViewingOrder[];
   original: string;
   studios: Studio[];
-  otherTitles: string[];
+  /** Пустой Go slice приходит как null. */
+  otherTitles: string[] | null;
   translates: Translate[];
 }
 

@@ -4,14 +4,16 @@
 
 .bookmark {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--anion-space-8);
 }
 
 .bookmark__trigger {
-  inline-size: 100%;
+  inline-size: auto;
+  gap: var(--anion-space-8);
   justify-content: space-between;
-  font-size: var(--anion-font-size-14);
+  font-size: var(--anion-font-size-13);
 }
 
 .bookmark__menu {
@@ -75,12 +77,18 @@
 }
 
 small {
+  flex-basis: 100%;
   color: var(--anion-negative-text);
   line-height: 1.35;
 }
 
 // У вышедших тайтлов кнопки подписки нет — пустой хост не должен давать
-// лишний отступ в колонке.
+// лишний отступ в строке действий.
+app-subscribe-button {
+  flex: 0 0 auto;
+  max-inline-size: 100%;
+}
+
 app-subscribe-button:empty {
   display: none;
 }
