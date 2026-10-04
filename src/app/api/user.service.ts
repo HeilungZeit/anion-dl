@@ -44,11 +44,12 @@ export class UserService {
 
   async fetchUser(): Promise<void> {
     try {
-      this.state.set(await this.api.get<UserResponse>('/user'));
+      // Гостю бэк отвечает 200 с null — это и есть состояние «не вошли».
+      this.state.set(await this.api.get<UserResponse | null>('/user'));
     } catch {
-      // Любая неудача здесь означает «не вошли»: и отсутствие куки (бэк
-      // отвечает 403 с кодом UNAUTHORIZED), и протухшую сессию, и обрыв сети.
-      // Различать их незачем — гость и гость.
+      // Любая неудача здесь тоже означает «не вошли»: старый бэк отвечал
+      // гостю 403, плюс протухшая сессия и обрыв сети. Различать их незачем —
+      // гость и гость.
       this.state.set(null);
     } finally {
       this.initialized.set(true);
