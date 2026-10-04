@@ -38,13 +38,11 @@ interface SubscriptionState {
 
 const PAGE_SIZE = 20;
 
-// Проверка серий на бэке идёт не чаще раза в 30 минут, чаще спрашивать
-// незачем. Приложение живёт в фоне часами (очередь загрузок), и без опроса
-// системное уведомление о серии не пришло бы никогда: при фокусе окна
+// Проверку серий раз в 40 минут запускает Cloud Scheduler на бэке, чаще
+// спрашивать незачем. Приложение живёт в фоне часами (очередь загрузок), и без
+// опроса системное уведомление о серии не пришло бы никогда: при фокусе окна
 // человек видит бейдж и так.
 const POLL_INTERVAL_MS = 30 * 60 * 1000;
-// tick отвечает сразу, а проверка на бэке укладывается в ~20 с.
-const AFTER_TICK_DELAY_MS = 30 * 1000;
 const LAST_NOTIFIED_KEY = 'anion_notifications_last_notified_id';
 
 /** Текст уведомления — общий для списка и системного уведомления. */
@@ -93,8 +91,7 @@ function writeLastNotifiedId(id: number): void {
 
 /**
  * Колокольчик десктопа: счётчик, список уведомлений, подписка на тайтл и
- * системное уведомление о новых сериях. Заодно шлёт tick: проверку серий на
- * бэке запускают клиенты.
+ * системное уведомление о новых сериях.
  */
 @Injectable({ providedIn: 'root' })
 export class NotificationsService {
@@ -123,17 +120,11 @@ export class NotificationsService {
     }
     this.started = true;
 
-    const poll = (): void => {
-      this.tick();
-      setTimeout(() => void this.refresh(), AFTER_TICK_DELAY_MS);
-    };
-
-    poll();
-    setInterval(poll, POLL_INTERVAL_MS);
+    void this.refresh();
+    setInterval(() => void this.refresh(), POLL_INTERVAL_MS);
 
     void getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) {
-        this.tick();
         void this.refresh();
       }
     });
@@ -249,12 +240,6 @@ export class NotificationsService {
     this.list.update((items) =>
       items.map((item) => (predicate(item) ? { ...item, read: true } : item))
     );
-  }
-
-  private tick(): void {
-    this.api.post<unknown>('/jobs/tick').catch(() => {
-      // Фоновая задача: её ошибка пользователя не касается.
-    });
   }
 
   private async notifyAboutFresh(): Promise<void> {
