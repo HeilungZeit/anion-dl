@@ -2,11 +2,14 @@ import { describe, expect, test } from 'bun:test';
 
 import type { Poster } from './anime.types';
 import {
+  foldServerPosition,
+  latestUnsent,
   mergeWatchProgress,
   resumeEpisodeFor,
   resumePositionFor,
   selectContinueWatching,
   trimWatchRecords,
+  type ServerPlaybackPosition,
   type WatchProgressUpdate,
   type WatchRecord,
 } from './watch-progress.service';
@@ -237,5 +240,63 @@ describe('watch progress policy', () => {
     const saved = record({ positionSecs: 1.05, durationSecs: 100 });
 
     expect(resumePositionFor([saved], 1, 1, 'Dub')).toBe(1.05);
+  });
+});
+
+describe('позиция в аккаунте', () => {
+  const server = (overrides: Partial<ServerPlaybackPosition> = {}): ServerPlaybackPosition => ({
+    animeId: 1,
+    episode: 1,
+    dubbing: 'Dub',
+    player: 'Плеер Kodik',
+    positionSecs: 70,
+    durationSecs: 100,
+    finished: false,
+    title: 'Title',
+    animeUrl: '',
+    poster: { big: 'server-big' },
+    observedAt: new Date(5_000).toISOString(),
+    ...overrides,
+  });
+
+  test('серверная запись вливается со своим временем', () => {
+    const [folded] = foldServerPosition([record()], server(), poster);
+
+    expect(folded.positionSecs).toBe(70);
+    expect(folded.updatedAt).toBe(5_000);
+    expect(folded.poster.big).toBe('server-big');
+    expect(folded.poster.medium).toBe('medium');
+  });
+
+  test('запись из iframe без секунд не стирает секунды той же серии', () => {
+    const [folded] = foldServerPosition(
+      [record({ positionSecs: 40 })],
+      server({ positionSecs: null, durationSecs: null }),
+      poster
+    );
+
+    expect(folded.positionSecs).toBe(40);
+    expect(folded.durationSecs).toBe(100);
+  });
+
+  test('секунда с сайта находится и в другой озвучке той же серии', () => {
+    const records = foldServerPosition([], server({ dubbing: 'Другая' }), poster);
+
+    expect(resumePositionFor(records, 1, 1, 'Dub')).toBe(70);
+  });
+
+  test('отправляется только самое свежее неотправленное на тайтл', () => {
+    const records = [
+      record({ episode: 1, unsent: true, updatedAt: 1 }),
+      record({ episode: 2, unsent: true, updatedAt: 3 }),
+      record({ episode: 3, unsent: false, updatedAt: 9 }),
+      record({ animeId: 2, unsent: true, updatedAt: 2 }),
+    ];
+
+    const sent = latestUnsent(records).map((item) => [item.animeId, item.episode]);
+    expect(sent).toEqual([
+      [1, 2],
+      [2, 1],
+    ]);
   });
 });

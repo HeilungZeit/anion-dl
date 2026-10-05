@@ -24,6 +24,7 @@ import { NotificationItemComponent } from '../components/notification-item/notif
 import { RemoteWatchProgressService } from '../api/remote-watch-progress.service';
 import { UpdateService } from '../api/update.service';
 import { UserService } from '../api/user.service';
+import { WatchProgressService } from '../api/watch-progress.service';
 import { PlayerWindowService } from '../windows/player-window.service';
 
 /**
@@ -53,6 +54,7 @@ export class ShellLayoutComponent implements OnInit {
   private readonly users = inject(UserService);
   private readonly bookmarks = inject(BookmarksService);
   private readonly remoteProgress = inject(RemoteWatchProgressService);
+  private readonly localProgress = inject(WatchProgressService);
   private readonly router = inject(Router);
 
   // Сервис инжектится в шапке, а значит поднимается при старте приложения:
@@ -80,6 +82,9 @@ export class ShellLayoutComponent implements OnInit {
       event.preventDefault();
 
       await this.playerWindows.closeAll();
+      // Плеер главного окна: destroy не доводит Angular до onDestroy, и
+      // позиция, накопленная с последней паузы, иначе осталась бы только в памяти.
+      await this.localProgress.flushBeforeExit();
       await window.destroy();
     });
 
@@ -140,8 +145,9 @@ export class ShellLayoutComponent implements OnInit {
   }
 
   async logout(): Promise<void> {
-    // После выхода сессии нет: неотправленные отметки уходят до него.
+    // После выхода сессии нет: неотправленные отметки и позиция уходят до него.
     await this.remoteProgress.flush();
+    await this.localProgress.flushBeforeExit();
     await this.users.logout();
     this.bookmarks.clear();
     this.remoteProgress.clear();

@@ -22,6 +22,54 @@
   scrollbar-width: thin;
 }
 
+// Обёртка нужна ради крестика: кнопку нельзя класть внутрь ссылки.
+.continue-item {
+  position: relative;
+  display: flex;
+  min-inline-size: 0;
+
+  > .continue-card {
+    flex: 1;
+  }
+}
+
+.continue-item__hide {
+  position: absolute;
+  inset-block-start: var(--anion-space-6);
+  inset-inline-end: var(--anion-space-6);
+  display: grid;
+  inline-size: var(--anion-space-32);
+  block-size: var(--anion-space-32);
+  padding: 0;
+  place-items: center;
+  border: none;
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-bg-scrim);
+  color: var(--anion-text-on-brand);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--anion-duration-base) ease;
+
+  tui-icon {
+    font-size: var(--anion-icon-16);
+  }
+
+  &:hover {
+    background: var(--anion-bg-scrim-strong);
+  }
+
+  &:focus-visible {
+    opacity: 1;
+    outline: none;
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+// Крестик не спорит с карточкой за внимание: виден при наведении и фокусе.
+.continue-item:hover .continue-item__hide {
+  opacity: 1;
+}
+
 .continue-card {
   display: flex;
   min-inline-size: 0;

@@ -24,6 +24,7 @@
 
           <div class="continue-row">
             @for (record of records; track record.animeId) {
+              <div class="continue-item">
               <a
                 class="continue-card"
                 [routerLink]="['/anime', record.animeId]"
@@ -45,8 +46,10 @@
                   <span class="continue-card__position">
                     @if (record.upNext) {
                       Следующая серия
-                    } @else {
+                    } @else if (record.positionSecs > 0) {
                       Продолжить с {{ formatPosition(record.positionSecs) }}
+                    } @else {
+                      Смотреть серию
                     }
                   </span>
                   <span class="continue-card__progress" aria-hidden="true">
@@ -61,6 +64,18 @@
                   </span>
                 </span>
               </a>
+              @if (users.isAuthenticated()) {
+                <button
+                  class="continue-item__hide"
+                  type="button"
+                  [attr.aria-label]="'Убрать «' + record.title + '» из ряда'"
+                  title="Убрать из ряда"
+                  (click)="hide(record.animeId, $event)"
+                >
+                  <tui-icon icon="@tui.x" />
+                </button>
+              }
+              </div>
             }
           </div>
         </section>

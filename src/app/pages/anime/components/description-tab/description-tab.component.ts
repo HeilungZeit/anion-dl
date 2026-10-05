@@ -70,7 +70,10 @@ export class DescriptionTabComponent {
   private readonly remoteProgress = inject(RemoteWatchProgressService);
   private readonly users = inject(UserService);
   private readonly downloads = inject(DownloadService);
-  readonly progressInitialized = this.localProgress.isInitialized;
+  /** История тайтла готова — у вошедшего уже сверена с аккаунтом. */
+  readonly progressInitialized = computed(() =>
+    this.localProgress.isTitleReady(this.anime().animeId)
+  );
 
   /**
    * Скачанные серии этого тайтла: videoId -> путь. Такая серия играет с диска.

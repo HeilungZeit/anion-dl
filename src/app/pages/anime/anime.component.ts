@@ -17,6 +17,7 @@ import { TuiTabs } from '@taiga-ui/kit';
 import { AnimeService } from '../../api/anime.service';
 import type { Video } from '../../api/anime.types';
 import { CvhService } from '../../api/cvh.service';
+import { UserService } from '../../api/user.service';
 import {
   isKodik,
   sourceOfDubbing,
@@ -62,6 +63,7 @@ export class AnimeComponent {
   private readonly cvh = inject(CvhService);
   private readonly settings = inject(PlayerSettingsService);
   private readonly localProgress = inject(WatchProgressService);
+  private readonly users = inject(UserService);
   private readonly watchTab = viewChild(DescriptionTabComponent);
 
   readonly id = input.required<string>();
@@ -159,10 +161,24 @@ export class AnimeComponent {
     // сломанной, хотя данные пришли. Правила — в `pickDubbing`. Без локальной
     // истории и настройки выбор случился бы до их чтения и вёл бы не туда,
     // поэтому их ждём.
+    // У вошедшего история тайтла сверяется с аккаунтом: там может быть
+    // позиция, оставленная на сайте.
+    effect(() => {
+      const animeId = this.anime.value()?.animeId;
+      if (animeId !== undefined && this.users.isInitialized()) {
+        void this.localProgress.syncTitle(animeId);
+      }
+    });
+
     effect(() => {
       const available = this.dubbings();
       const preferredSource = this.preferredSource();
-      if (!this.localProgress.isInitialized() || preferredSource === undefined) {
+      const animeId = this.anime.value()?.animeId;
+      if (
+        animeId === undefined ||
+        !this.localProgress.isTitleReady(animeId) ||
+        preferredSource === undefined
+      ) {
         return;
       }
 

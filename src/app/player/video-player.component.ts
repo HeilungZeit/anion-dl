@@ -63,7 +63,7 @@ const TICK_MS = 500;
  * подлагивания; точную позицию всё равно фиксируют пауза, конец серии и
  * закрытие плеера.
  */
-const PROGRESS_EMIT_MS = 5000;
+const PROGRESS_EMIT_MS = 10_000;
 const IS_PLAYER_WINDOW = currentWindowTarget().kind === 'player';
 /** Воспроизведение началось в каком-то из окон. */
 const PLAYBACK_EVENT = 'player://started';

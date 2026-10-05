@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
+import { UserService } from '../api/user.service';
 import { WatchProgressService } from '../api/watch-progress.service';
 import { PlayerBoundsService } from '../windows/player-bounds.service';
 
@@ -27,9 +28,14 @@ import { PlayerBoundsService } from '../windows/player-bounds.service';
 export class BareLayoutComponent {
   private readonly progress = inject(WatchProgressService);
   private readonly bounds = inject(PlayerBoundsService);
+  private readonly users = inject(UserService);
 
   constructor() {
     const window = getCurrentWindow();
+
+    // Окно плеера — отдельный вебвью со своим UserService. Без запроса оно
+    // считало человека гостем: отметки серий и позиция в аккаунт не уходили.
+    void this.users.fetchUser();
 
     // Позиция пишется в файл с задержкой в две секунды, а уничтожение вебвью
     // системой промис до конца не доводит: без перехвата закрытие крестиком
@@ -38,7 +44,7 @@ export class BareLayoutComponent {
     void window.onCloseRequested(async (event) => {
       event.preventDefault();
 
-      await this.progress.flush().catch(() => undefined);
+      await this.progress.flushBeforeExit();
       await this.bounds.remember();
       await window.destroy();
     });
