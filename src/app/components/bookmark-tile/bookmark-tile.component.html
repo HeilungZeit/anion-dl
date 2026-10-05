@@ -35,7 +35,7 @@
       class="anime-status"
       [class.anime-status--ongoing]="bookmark().animeStatus === 'ongoing'"
       [class.anime-status--released]="bookmark().animeStatus === 'released'"
-      [class.anime-status--anons]="bookmark().animeStatus === 'anons'"
+      [class.anime-status--anons]="isAnnouncement"
     >
       {{ animeStatusLabel }}
     </span>
@@ -129,56 +129,6 @@
             }
           </tui-data-list>
         </ng-template>
-      </div>
-
-      <div class="edit-field">
-        <label>Статус аниме</label>
-        <div
-          tuiDropdownAuto
-          [tuiDropdown]="animeStatusDropdown"
-          [(tuiDropdownOpen)]="showAnimeStatusDropdown"
-        >
-          <button
-            tuiButton
-            appearance="secondary"
-            size="s"
-            type="button"
-            class="status-selector"
-            (click)="showAnimeStatusDropdown.set(!showAnimeStatusDropdown())"
-          >
-            {{ currentAnimeStatusLabel }}
-            <tui-icon icon="@tui.chevron-down" />
-          </button>
-        </div>
-
-        <ng-template #animeStatusDropdown>
-          <tui-data-list>
-            @for (option of animeStatusOptions; track option.alias) {
-            <button
-              tuiOption
-              type="button"
-              (click)="onSelectAnimeStatus(option.alias)"
-              [class.selected]="editedAnimeStatus() === option.alias"
-            >
-              {{ option.label }}
-            </button>
-            }
-          </tui-data-list>
-        </ng-template>
-      </div>
-
-      <div class="edit-field">
-        <label>Просмотрено эпизодов (синхронизировано)</label>
-        <div class="episodes-counter">
-          
-          <span class="episodes-value">
-            {{ bookmark().watchedEpisodes }}
-            @if (bookmark().totalEpisodes > 0) {
-            <small>/ {{ bookmark().totalEpisodes }}</small>
-            }
-          </span>
-          
-        </div>
       </div>
 
       <div class="edit-actions">

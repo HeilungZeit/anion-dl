@@ -262,36 +262,6 @@
   }
 }
 
-.episodes-counter {
-  display: flex;
-  align-items: center;
-  gap: var(--anion-space-8);
-
-  button {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-
-    tui-icon {
-      width: var(--anion-icon-15);
-      height: var(--anion-icon-15);
-    }
-  }
-}
-
-.episodes-value {
-  flex: 1;
-  color: var(--anion-text-primary);
-  font-size: 15px;
-  font-weight: 650;
-  text-align: center;
-
-  small {
-    color: var(--text-secondary);
-    font-size: var(--anion-font-size-12);
-  }
-}
-
 .edit-actions {
   display: flex;
   margin-top: var(--anion-space-2);

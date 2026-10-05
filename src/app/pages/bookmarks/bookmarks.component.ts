@@ -122,10 +122,10 @@ export class BookmarksComponent {
     const count = this.bookmarks.hasValue() ? this.bookmarks.value().pagination.totalItems : 0;
     return count % 10 === 1 && count % 100 !== 11 ? 'тайтл' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'тайтла' : 'тайтлов';
   }
-  async onUpdateBookmark(data: { bookmark: Bookmark; status: BookmarkStatusValue; animeStatus: string }): Promise<void> {
+  async onUpdateBookmark(data: { bookmark: Bookmark; status: BookmarkStatusValue }): Promise<void> {
     this.mutationError.set('');
     try {
-      await this.api.update(data.bookmark.yumiId, { status: data.status, animeStatus: data.animeStatus });
+      await this.api.update(data.bookmark.yumiId, { status: data.status });
       this.bookmarks.reload();
     } catch { this.mutationError.set('Не удалось обновить закладку. Попробуйте ещё раз.'); }
   }

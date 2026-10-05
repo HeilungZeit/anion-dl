@@ -21,10 +21,17 @@ interface StatusOption {
   icon: string;
 }
 
-interface AnimeStatusOption {
-  alias: string;
-  label: string;
-}
+/**
+ * Подписи статусов тайтла. Статус в закладку пишет сервер из Yani, у анонса
+ * там alias `announcement`; `anons` остался у старых закладок, где статус
+ * выставляли руками.
+ */
+const ANIME_STATUS_LABELS: Record<string, string> = {
+  ongoing: 'Онгоинг',
+  released: 'Вышло',
+  announcement: 'Анонс',
+  anons: 'Анонс',
+};
 
 @Component({
   selector: 'app-bookmark-tile',
@@ -46,23 +53,11 @@ export class BookmarkTileComponent {
   allStatuses = input.required<readonly StatusOption[]>();
 
   delete = output<Bookmark>();
-  update = output<{
-    bookmark: Bookmark;
-    status: BookmarkStatusValue;
-    animeStatus: string;
-  }>();
-
-  readonly animeStatusOptions: AnimeStatusOption[] = [
-    { alias: 'ongoing', label: 'Онгоинг' },
-    { alias: 'released', label: 'Вышло' },
-    { alias: 'anons', label: 'Анонс' },
-  ];
+  update = output<{ bookmark: Bookmark; status: BookmarkStatusValue }>();
 
   isEditing = signal(false);
   editedStatus = signal<BookmarkStatusValue | null>(null);
-  editedAnimeStatus = signal<string>('ongoing');
   showStatusDropdown = signal(false);
-  showAnimeStatusDropdown = signal(false);
   showDeleteConfirm = signal(false);
   private readonly refreshedPoster = signal<{
     animeId: number;
@@ -93,8 +88,12 @@ export class BookmarkTileComponent {
   }
 
   get animeStatusLabel(): string {
+    return ANIME_STATUS_LABELS[this.bookmark().animeStatus] ?? 'Статус неизвестен';
+  }
+
+  get isAnnouncement(): boolean {
     const alias = this.bookmark().animeStatus;
-    return this.animeStatusOptions.find((option) => option.alias === alias)?.label ?? 'Статус неизвестен';
+    return alias === 'announcement' || alias === 'anons';
   }
 
   get currentStatusLabel(): string {
@@ -103,15 +102,8 @@ export class BookmarkTileComponent {
     return found?.label || status;
   }
 
-  get currentAnimeStatusLabel(): string {
-    const alias = this.editedAnimeStatus();
-    return this.animeStatusOptions.find((o) => o.alias === alias)?.label ?? alias;
-  }
-
   onEdit() {
-    const b = this.bookmark();
-    this.editedStatus.set(b.status);
-    this.editedAnimeStatus.set(b.animeStatus || 'ongoing');
+    this.editedStatus.set(this.bookmark().status);
     this.isEditing.set(true);
   }
 
@@ -119,31 +111,22 @@ export class BookmarkTileComponent {
     this.isEditing.set(false);
     this.editedStatus.set(null);
     this.showStatusDropdown.set(false);
-    this.showAnimeStatusDropdown.set(false);
   }
 
   onSaveEdit() {
     const status = this.editedStatus();
     if (!status) return;
 
-    this.update.emit({
-      bookmark: this.bookmark(),
-      status,
-      animeStatus: this.editedAnimeStatus(),
-    });
+    // Серии считает плеер (watch progress), статус тайтла — сервер по Yani,
+    // так что руками правится только список.
+    this.update.emit({ bookmark: this.bookmark(), status });
     this.isEditing.set(false);
     this.showStatusDropdown.set(false);
-    this.showAnimeStatusDropdown.set(false);
   }
 
   onSelectStatus(status: BookmarkStatusValue) {
     this.editedStatus.set(status);
     this.showStatusDropdown.set(false);
-  }
-
-  onSelectAnimeStatus(alias: string) {
-    this.editedAnimeStatus.set(alias);
-    this.showAnimeStatusDropdown.set(false);
   }
 
   onDeleteClick() {
