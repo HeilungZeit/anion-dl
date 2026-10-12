@@ -1,0 +1,23 @@
+2x_AnimeJaNai_V2_SuperUltraCompact, смешанная с дообученной под порчу Kodik
+(ink8), — веса нейросети режима «Детали».
+
+Исходная модель: 2x_AnimeJaNai_V2_SuperUltraCompact, автор the-database,
+https://github.com/the-database/mpv-upscale-2x_animejanai
+(релиз 2.0.0, архив 2x_AnimeJaNai_V2_ModelsOnly.zip,
+файл 2x_AnimeJaNai_V2_SuperUltraCompact_100k.onnx).
+Лицензия исходной модели: CC BY-NC-SA 4.0,
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Изменения: та же архитектура (SRVGGNetCompact 24nf/8nc/×2), веса дообучены
+так, чтобы на кадрах, испорченных как у Kodik (энкод x264, смягчение,
+двойное сжатие), выдавать то же, что исходная модель на чистом кадре.
+Обучение — на кадрах APISR Dataset
+(https://huggingface.co/datasets/HikariDawn/APISR_Dataset, только личное и
+академическое использование). Подробности — anionWebGPU, docs/PLAN.md, этапы Э11 и Э13 (вес штриха в обучении, вариант ink8), Э17 (смесь весов:
+0.75 · исходная + 0.25 · ink8 поэлементно — возвращает фоновую текстуру).
+
+Как производная, эти веса распространяются под той же лицензией
+CC BY-NC-SA 4.0. Использование только некоммерческое.
+
+weights.bin — веса (float16) в порядке чтения шейдера, переложенные скриптом
+anion-dl/scripts/compact-to-wgsl.py; model.json — их описание.

@@ -31,7 +31,7 @@ import {
 } from './media-session';
 import { PlayerSettingsService } from './player-settings.service';
 import { ReResolveOnForbidden } from './re-resolve';
-import { shouldRefreshAhead } from './signature-clock';
+import { expiryEpochMs, shouldRefreshAhead } from './signature-clock';
 import { SkipController, type SkipHint } from './skip-controller';
 import {
   isWebGpuAvailable,
@@ -85,6 +85,18 @@ const FRAME_INTERVAL_MS = 6000;
 const VOLUME_SAVE_MS = 500;
 
 /**
+ * За сколько до конца серии заранее резолвить следующую: к автопереходу
+ * ссылка уже есть, и «Ищу поток…» не показывается.
+ */
+const PREFETCH_LEAD_SECS = 3 * 60;
+
+/**
+ * Окно, в котором повторная ошибка декодера считается той же самой. Внутри
+ * окна восстановление идёт по нарастающей, за ним — начинается заново.
+ */
+const MEDIA_RECOVERY_WINDOW_MS = 10_000;
+
+/**
  * Горячие клавиши — и для обработчика, и для справки по «?». Буквы сверяются
  * по `event.code`, то есть по физической клавише: с русской раскладкой
  * `event.key` вместо «k» приносит «л», и управление молча переставало работать.
@@ -92,6 +104,7 @@ const VOLUME_SAVE_MS = 500;
 export const HOTKEYS: readonly { keys: string; action: string }[] = [
   { keys: 'Пробел / K', action: 'Пауза и воспроизведение' },
   { keys: '← / →', action: 'Назад / вперёд на 10 секунд' },
+  { keys: 'Home / End', action: 'В начало / в конец серии' },
   { keys: '↑ / ↓', action: 'Громкость' },
   { keys: 'M', action: 'Выключить звук' },
   { keys: 'F', action: 'Полный экран' },
@@ -164,6 +177,11 @@ export class VideoPlayerComponent {
   readonly iframeUrl = input.required<string>();
   readonly skips = input<VideoSkips>({});
   readonly isLastEpisode = input(false);
+  /**
+   * Локатор следующей серии — для заранее готовой ссылки к автопереходу.
+   * null — следующей нет или она скачана и сыграет с диска.
+   */
+  readonly nextIframeUrl = input<string | null>(null);
   readonly poster = input('');
 
   /** Что показать в системной карточке «Сейчас играет»; null — ничего. */
@@ -220,6 +238,8 @@ export class VideoPlayerComponent {
 
   readonly status = signal<PlayerStatus>('resolving');
   readonly errorText = signal('');
+  /** Ошибка из-за пропавшей сети: плеер сам продолжит, когда она вернётся. */
+  readonly offline = signal(false);
 
   readonly requestedQuality = signal<number>(DEFAULT_QUALITY);
   readonly actualQuality = signal<number | null>(null);
@@ -335,6 +355,13 @@ export class VideoPlayerComponent {
   readonly scrubSecs = signal<number | null>(null);
   readonly shownPosition = computed(() => this.scrubSecs() ?? this.position());
 
+  /** Для скринридера — целые секунды и время словами, а не «1234.5678». */
+  readonly seekValueNow = computed(() => Math.floor(this.shownPosition()));
+  readonly seekValueMax = computed(() => Math.floor(this.duration()));
+  readonly seekValueText = computed(
+    () => `${formatTime(this.shownPosition())} из ${formatTime(this.duration())}`
+  );
+
   /** Апскейл: режим, доступность и возможная ошибка запуска. */
   readonly upscaleMode = signal<UpscaleMode>('off');
   readonly upscaleModes = UPSCALE_MODES;
@@ -357,11 +384,16 @@ export class VideoPlayerComponent {
   );
 
   /**
+   * Улучшение готовится: грузится пресет, компилируются шейдеры. Канва в это
+   * время скрыта (кадра на ней ещё нет), видно обычное видео и плашку.
+   */
+  readonly upscalePreparing = signal(false);
+
+  /**
    * Нажимал ли человек «play» хоть раз.
    *
-   * От этого зависит автозапуск при смене серии: открытие страницы тайтла
-   * воспроизведение не начинает, а вот выбор другой серии — уже осознанное
-   * действие, и останавливаться на постере там незачем.
+   * От этого зависит, продолжать ли просмотр после восстановления сети или
+   * повтора загрузки. Автозапуск новой серии решает `playNextOnLoad`.
    */
   readonly hasStarted = signal(false);
 
@@ -381,7 +413,7 @@ export class VideoPlayerComponent {
   private pendingSeek: (() => void) | null = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
   private skipController = new SkipController({});
-  private readonly latch = new ReResolveOnForbidden();
+  private latch = new ReResolveOnForbidden();
   private readonly mediaSession = new MediaSessionBridge();
   /**
    * Сохранённое качество. Первый резолв его дожидается: резолв и так идёт
@@ -400,6 +432,15 @@ export class VideoPlayerComponent {
   private generation = 0;
   private refreshing = false;
   private expectResume = false;
+
+  /** Следующую серию запросил сам плеер — её поток стартует без нажатия. */
+  private playNextOnLoad = false;
+  /**
+   * Ссылка, заблаговременное обновление которой не продлило подпись. Повторять
+   * его на каждом тике бессмысленно: поток перезапускался бы дважды в секунду
+   * и не успевал скачать ни сегмента. Дальше выручит переролв по 403.
+   */
+  private unrenewedManifest = '';
   /**
    * Конец серии уже обработан. Он приходит двумя путями — событием `ended`
    * и от hls.js, — и второй не должен перезапускать отсчёт.
@@ -419,6 +460,17 @@ export class VideoPlayerComponent {
     typeof matchMedia === 'function' &&
     matchMedia('(prefers-reduced-motion: reduce)').matches;
   private volumeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Попытки подряд вытащить поток после ошибки декодера. */
+  private mediaRecoveries = 0;
+  private lastMediaRecoveryAt = 0;
+  /** Снятие ожидания сети после офлайн-ошибки. */
+  private stopWaitingForNetwork: (() => void) | null = null;
+  /** Заранее запрошенная ссылка следующей серии. */
+  private prefetched: {
+    iframeUrl: string;
+    quality: number;
+    manifest: Promise<string>;
+  } | null = null;
   /** Громкость применяется к элементу, только когда тот уже в DOM. */
   private readonly savedVolume = signal<{ volume: number; muted: boolean } | null>(
     null
@@ -528,7 +580,12 @@ export class VideoPlayerComponent {
           this.skips(),
           this.isLastEpisode()
         );
-        void this.load(url, startSecs, localPath);
+        // Сама запускается только серия, на которую перешли из плеера
+        // («Следующая», отсчёт после титров). Открытие страницы и выбор серии
+        // в списке ставят её на паузу на постере.
+        const resume = this.playNextOnLoad;
+        this.playNextOnLoad = false;
+        void this.load(url, startSecs, localPath, resume);
       });
     });
 
@@ -576,6 +633,7 @@ export class VideoPlayerComponent {
         clearTimeout(this.volumeTimer);
       }
 
+      this.stopWaitingForNetwork?.();
       this.cancelAutoNext();
       this.stopFrameCycle();
       this.stopUpscale();
@@ -586,12 +644,28 @@ export class VideoPlayerComponent {
 
   // ——— загрузка ———
 
+  /**
+   * @param resume запускать ли воспроизведение, когда поток готов.
+   */
   private async load(
     iframeUrl: string,
     positionSecs: number,
-    localPath: string | null = null
+    localPath: string | null = null,
+    resume = this.hasStarted()
   ): Promise<void> {
     const token = ++this.generation;
+
+    this.stopWaitingForNetwork?.();
+    this.offline.set(false);
+
+    // Старый поток гасится сразу, а не после резолва: его тикер успевал
+    // обновить подпись уже чужой серии, перебивал этот резолв и подключал
+    // новую серию с секунды старой — с титров, где загрузка и вставала.
+    this.stopTicker();
+    this.detachCurrent();
+    this.manifestUrl = '';
+    this.latch = new ReResolveOnForbidden();
+    this.expectResume = false;
 
     this.status.set('resolving');
     this.errorText.set('');
@@ -599,27 +673,62 @@ export class VideoPlayerComponent {
     this.switchingQuality.set(false);
 
     if (localPath) {
-      await this.loadLocal(token, localPath, positionSecs, iframeUrl);
+      await this.loadLocal(token, localPath, positionSecs, iframeUrl, resume);
       return;
     }
 
     try {
       await this.qualityRestored;
-      const manifest = await this.resolver.resolvePlayback(
-        iframeUrl,
-        this.requestedQuality()
-      );
+      const manifest = await this.resolveManifest(iframeUrl);
 
       if (token !== this.generation) {
         return;
       }
 
-      this.attach(manifest, positionSecs, iframeUrl, this.hasStarted());
+      this.attach(manifest, positionSecs, iframeUrl, resume);
     } catch (error: unknown) {
       if (token === this.generation) {
         this.fail(error instanceof Error ? error.message : String(error));
       }
     }
+  }
+
+  /**
+   * Ссылка на серию: заранее запрошенная, если она есть и подпись ещё
+   * свежая, иначе — новый резолв.
+   */
+  private async resolveManifest(iframeUrl: string): Promise<string> {
+    const quality = this.requestedQuality();
+    const prefetched = this.prefetched;
+
+    if (prefetched?.iframeUrl === iframeUrl && prefetched.quality === quality) {
+      this.prefetched = null;
+      const manifest = await prefetched.manifest.catch(() => null);
+      if (manifest && !shouldRefreshAhead(manifest)) {
+        return manifest;
+      }
+    }
+
+    return this.resolver.resolvePlayback(iframeUrl, quality);
+  }
+
+  /**
+   * Запрашивает ссылку следующей серии, пока досматривается эта. Ошибка тут
+   * не страшна: при переходе серия просто резолвится как обычно.
+   */
+  private prefetchNext(): void {
+    const next = this.nextIframeUrl();
+    const quality = this.requestedQuality();
+    if (
+      !next ||
+      (this.prefetched?.iframeUrl === next && this.prefetched.quality === quality)
+    ) {
+      return;
+    }
+
+    const manifest = this.resolver.resolvePlayback(next, quality);
+    manifest.catch(() => undefined);
+    this.prefetched = { iframeUrl: next, quality, manifest };
   }
 
   /**
@@ -631,7 +740,8 @@ export class VideoPlayerComponent {
     token: number,
     path: string,
     positionSecs: number,
-    iframeUrl: string
+    iframeUrl: string,
+    resume: boolean
   ): Promise<void> {
     try {
       await invoke('allow_playback', { path });
@@ -658,7 +768,7 @@ export class VideoPlayerComponent {
       'loadedmetadata',
       () => {
         if (token === this.generation) {
-          this.onReady(video, positionSecs, this.hasStarted());
+          this.onReady(video, positionSecs, resume);
         }
       },
       { once: true }
@@ -812,10 +922,10 @@ export class VideoPlayerComponent {
 
     this.playbackReady = true;
 
-    // Открытие страницы тайтла просмотр не начинает: человек пришёл почитать
-    // описание или выбрать серию, а не слушать опенинг. Смена серии — уже
-    // осознанное продолжение просмотра, а смена качества и переролв сохраняют
-    // то состояние, в котором их застали.
+    // Открытие страницы и выбор серии в списке просмотр не начинают: человек
+    // мог прийти почитать описание, а не слушать опенинг. Сама стартует только
+    // серия, на которую перешли из плеера, а смена качества и переролв
+    // сохраняют то состояние, в котором их застали.
     if (resume) {
       void video.play().catch(() => undefined);
     }
@@ -886,22 +996,103 @@ export class VideoPlayerComponent {
         this.fail('Подпись потока истекла, обновить не удалось.');
         return;
       case 'propagate':
-        if (data.fatal) {
-          this.fail(data.error?.message || 'Ошибка воспроизведения');
+        if (!data.fatal) {
+          return;
         }
+
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && this.recoverMedia()) {
+          return;
+        }
+
+        if (
+          data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+          navigator.onLine === false
+        ) {
+          this.waitForNetwork();
+          return;
+        }
+
+        this.fail(data.error?.message || 'Ошибка воспроизведения');
     }
   }
 
-  /** Тихо перезабрать манифест и продолжить с той же секунды. */
-  private async refresh(): Promise<void> {
+  /**
+   * Ошибка декодера часто лечится без перезагрузки: hls.js пересоздаёт
+   * MediaSource и продолжает с той же секунды. Рецепт из документации hls.js:
+   * сначала просто восстановить, при повторе — ещё и сменить аудиокодек, и
+   * только третья ошибка подряд показывается человеку.
+   */
+  private recoverMedia(): boolean {
+    const hls = this.hls;
+    if (!hls) {
+      return false;
+    }
+
+    const now = performance.now();
+    if (now - this.lastMediaRecoveryAt > MEDIA_RECOVERY_WINDOW_MS) {
+      this.mediaRecoveries = 0;
+    }
+    this.lastMediaRecoveryAt = now;
+    this.mediaRecoveries += 1;
+
+    if (this.mediaRecoveries === 1) {
+      hls.recoverMediaError();
+      return true;
+    }
+
+    if (this.mediaRecoveries === 2) {
+      hls.swapAudioCodec();
+      hls.recoverMediaError();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Сеть пропала: hls.js исчерпал повторы и сдался. Ждём событие `online` и
+   * продолжаем с той же секунды — без нажатия «Повторить». Серия резолвится
+   * заново: пока сети не было, подпись могла истечь.
+   */
+  private waitForNetwork(): void {
+    const video = this.videoRef()?.nativeElement;
+    const position = video?.currentTime || this.position();
+    const resume = video ? !video.paused : this.hasStarted();
+    const iframeUrl = this.playbackIframeUrl || this.iframeUrl();
+
+    video?.pause();
+    this.fail('Нет подключения к интернету. Продолжу, как только сеть вернётся.');
+    this.offline.set(true);
+
+    this.stopWaitingForNetwork?.();
+    const onOnline = (): void => {
+      this.stopWaitingForNetwork = null;
+      void this.load(iframeUrl, position, null, resume);
+    };
+    window.addEventListener('online', onOnline, { once: true });
+    this.stopWaitingForNetwork = () => {
+      window.removeEventListener('online', onOnline);
+      this.stopWaitingForNetwork = null;
+    };
+  }
+
+  /**
+   * Тихо перезабрать манифест и продолжить с той же секунды.
+   *
+   * @param ahead обновление по сроку подписи, а не по 403: старый поток ещё
+   * играет, поэтому ссылка без продлённой подписи ему ничего не даёт.
+   */
+  private async refresh(ahead = false): Promise<void> {
     if (this.refreshing) {
       return;
     }
 
     this.refreshing = true;
     // Своё поколение: смена качества или серии посреди переролва делает его
-    // ответ ненужным, и без проверки поток подключился бы дважды.
-    const token = ++this.generation;
+    // ответ ненужным, и без проверки поток подключился бы дважды. Плановое
+    // обновление поколение не забирает — его ответ может не понадобиться, и
+    // отменённая им смена качества так и висела бы.
+    const token = ahead ? this.generation : ++this.generation;
 
     try {
       const video = this.videoRef()?.nativeElement;
@@ -919,6 +1110,13 @@ export class VideoPlayerComponent {
       );
 
       if (token !== this.generation) {
+        return;
+      }
+
+      const current = expiryEpochMs(this.manifestUrl);
+      const next = expiryEpochMs(manifest);
+      if (ahead && current !== null && next !== null && next <= current) {
+        this.unrenewedManifest = this.manifestUrl;
         return;
       }
 
@@ -950,6 +1148,10 @@ export class VideoPlayerComponent {
       this.latch.rememberPosition(position);
       this.skipHint.set(this.skipController.visibleSkip(position, duration));
 
+      if (duration > 0 && duration - position <= PREFETCH_LEAD_SECS) {
+        this.prefetchNext();
+      }
+
       const now = performance.now();
       if (!video.paused && now - this.lastProgressAt >= PROGRESS_EMIT_MS) {
         this.lastProgressAt = now;
@@ -969,10 +1171,12 @@ export class VideoPlayerComponent {
 
       if (
         !this.refreshing &&
+        !this.switchingQuality() &&
         this.manifestUrl &&
+        this.manifestUrl !== this.unrenewedManifest &&
         shouldRefreshAhead(this.manifestUrl)
       ) {
-        void this.refresh();
+        void this.refresh(true);
       }
     }, TICK_MS);
   }
@@ -1247,12 +1451,18 @@ export class VideoPlayerComponent {
             this.upscaleMode.set(decision.to);
           }
         },
+        onPreparing: (preparing) => {
+          if (token === this.upscaleToken) {
+            this.upscalePreparing.set(preparing);
+          }
+        },
         onError: (message) => {
           // Цикл уже остановился сам; здесь остаётся показать причину и
           // погасить канву, чтобы под ней снова было видно обычное видео.
           if (token === this.upscaleToken) {
             this.upscaleError.set(message);
             this.upscaleStats.set(null);
+            this.upscalePreparing.set(false);
           }
         },
       });
@@ -1267,6 +1477,7 @@ export class VideoPlayerComponent {
       // Молча откатываться нельзя: человек включил режим и должен понять,
       // почему картинка не изменилась.
       if (token === this.upscaleToken) {
+        this.upscalePreparing.set(false);
         this.upscaleError.set(
           error instanceof Error ? error.message : 'Апскейл не запустился'
         );
@@ -1278,6 +1489,7 @@ export class VideoPlayerComponent {
     this.upscaler?.destroy();
     this.upscaler = null;
     this.upscaleStats.set(null);
+    this.upscalePreparing.set(false);
   }
 
   // ——— видимость панели ———
@@ -1498,6 +1710,7 @@ export class VideoPlayerComponent {
     if (!this.isLastEpisode()) {
       // Переход — осознанное продолжение просмотра, новая серия стартует сама.
       this.hasStarted.set(true);
+      this.playNextOnLoad = true;
       this.nextEpisode.emit();
     }
   }
@@ -1631,6 +1844,12 @@ export class VideoPlayerComponent {
         return true;
       case 'ArrowLeft':
         this.seekBy(-SEEK_STEP_SECS);
+        return true;
+      case 'Home':
+        this.seekTo(0);
+        return true;
+      case 'End':
+        this.seekTo(this.duration());
         return true;
       case 'ArrowUp':
         this.setVolume(this.volume() + VOLUME_STEP);

@@ -1,11 +1,5 @@
 import type { Anime4KPipeline } from 'anime4k-webgpu';
 
-import {
-  createCompactRenderer,
-  fitsRealtime,
-  type CompactHandle,
-} from './compact/renderer';
-
 /**
  * Апскейл кадра через Anime4K на WebGPU.
  *
@@ -18,6 +12,10 @@ import {
  * `navigator.gpu` есть, адаптер `apple`, `requestVideoFrameCallback` есть.
  * На Linux (WebKitGTK) WebGPU может отсутствовать — отсюда проверка поддержки
  * и режим «Выключен» по умолчанию.
+ *
+ * Пресеты — из форка HeilungZeit/anionWebGPU, общего с фронтом `anion`.
+ * «Детали» (`compact`) идут на его ядре: собственный WGSL-рендерер anion-dl
+ * переехал туда и там дальше ускорен и дообучен.
  */
 
 /**
@@ -34,8 +32,7 @@ export const UPSCALE_MODES = ['off', 'c', 'ca', 'compact'] as const;
 
 export type UpscaleMode = (typeof UPSCALE_MODES)[number];
 
-/** Режимы на шейдерах Anime4K — в отличие от `compact` со своей сетью. */
-type ShaderMode = Extract<UpscaleMode, 'c' | 'ca'>;
+type ShaderMode = Exclude<UpscaleMode, 'off'>;
 
 export interface UpscaleLabel {
   /** Коротко — и в пункте меню, и на кнопке. */
@@ -72,6 +69,12 @@ export interface UpscaleOptions {
   onStats?: (stats: UpscaleStats) => void;
   /** Ошибки конвейера асинхронные; без этого они пропадают молча. */
   onError?: (message: string) => void;
+  /**
+   * Идёт подготовка: загрузка пресета и компиляция шейдеров (в фоне, до
+   * секунд на холодном кеше). Пока true, на канве нет готового кадра —
+   * показывать обычное видео и сказать, что улучшение готовится.
+   */
+  onPreparing?: (preparing: boolean) => void;
 }
 
 /** Потолок вывода: пресеты Anime4K рассчитаны на двукратное увеличение. */
@@ -123,70 +126,117 @@ fn vs(@builtin(vertex_index) index: u32) -> VertexOut {
 @group(0) @binding(0) var frameSampler: sampler;
 @group(0) @binding(1) var frameTexture: texture_2d<f32>;
 
+// Упорядоченный дизеринг (Байер 4×4, ±0.5/255): кадр после конвейера точнее
+// 8 бит канвы, и без шума на плавных градиентах (небо, тени) видны полосы.
+const BAYER = array<f32, 16>(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+
 @fragment
-fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  return textureSample(frameTexture, frameSampler, uv);
+fn fs(in: VertexOut) -> @location(0) vec4f {
+  let color = textureSample(frameTexture, frameSampler, in.uv);
+  let cell = vec2u(in.position.xy) % 4u;
+  let noise = (BAYER[cell.y * 4u + cell.x] + 0.5) / 16.0 - 0.5;
+  return vec4f(color.rgb + noise / 255.0, color.a);
 }
 `;
 
 /**
  * Пресеты подгружаются на первом включении.
  *
- * Статический импорт тянул шейдеры Anime4K (около 4 МБ) в чанк страницы
- * тайтла, и их разбирал каждый заход на аниме — даже с выключенным апскейлом.
+ * Статический импорт тянул шейдеры Anime4K в чанк страницы тайтла, и их
+ * разбирал каждый заход на аниме — даже с выключенным апскейлом. У форка
+ * на каждый пресет своя точка входа: в чанк режима попадают только его
+ * шейдеры, а не все 3,4 МБ пакета. Заодно ушла и разборка UMD-обёртки —
+ * точки входа форка обычные ES-модули.
  */
-type PresetModules = typeof import('anime4k-webgpu');
-
-let presets: PresetModules | null = null;
-
-/**
- * Достаёт пресеты из пространства имён пакета.
- *
- * `anime4k-webgpu` собран UMD-обёрткой. Под Node её первая ветка кладёт всё в
- * `module.exports`, и `require(...).ModeA` работает — но в собранном бандле это
- * не так. Проверено чтением выходного чанка:
- *
- *     var chunk_..._default = q0();
- *     export { chunk_..._default as default };
- *
- * То есть наружу уходит **только `default`**, именованных экспортов на
- * пространстве имён нет вовсе — имена из минифицированного UMD статический
- * анализ не вытаскивает. Отсюда `new modules.ModeA(...)` и падало с «undefined
- * is not a constructor».
- *
- * Форма зависит от версии сборщика и выбранной ветки UMD, поэтому разбираем по
- * факту и с внятной ошибкой, если появится четвёртая.
- */
-function unwrapPresets(loaded: unknown): PresetModules {
-  const shapes: unknown[] = [
-    loaded,
-    (loaded as { default?: unknown })?.default,
-    (loaded as Record<string, unknown> | null)?.['anime4k-webgpu'],
-  ];
-
-  for (const shape of shapes) {
-    if (typeof (shape as PresetModules | undefined)?.ModeA === 'function') {
-      return shape as PresetModules;
-    }
-  }
-
-  throw new Error(
-    'Пакет anime4k-webgpu не отдал пресеты: неожиданная форма UMD-обёртки'
-  );
-}
-
-async function loadPresets(): Promise<PresetModules> {
-  presets ??= unwrapPresets(await import('anime4k-webgpu'));
-  return presets;
-}
-
 interface BuildContext {
-  modules: PresetModules;
   device: GPUDevice;
   inputTexture: GPUTexture;
   nativeDimensions: { width: number; height: number };
   targetDimensions: { width: number; height: number };
 }
+
+/** Собирает пресет режима под размеры кадра. */
+type PresetFactory = (ctx: BuildContext) => Anime4KPipeline;
+
+/** Веса «Деталей» — `model.json` + `weights.bin` из `scripts/compact-to-wgsl.py`. */
+type CompactModel = ConstructorParameters<
+  typeof import('anime4k-webgpu/presets/ModeCompact').ModeCompact
+>[0]['model'];
+
+/**
+ * Каталог весов «Деталей» в `src/assets/upscale`. `janai-v2-kodik-mix75` —
+ * поэлементная смесь 0.75 · `janai-v2` + 0.25 · ink8 (AnimeJaNai V2 SUC,
+ * дообученная под порчу Kodik с весом штриха; anionWebGPU, Э11, Э13, Э17):
+ * ink8 гасит мошкару x264, но мажет фоновую текстуру — кирпичи, листву;
+ * смесь возвращает текстуру почти как у исходной, а шума меньше. Исходная
+ * `janai-v2` оставлена для отката. Те же веса — у фронта.
+ */
+const COMPACT_WEIGHTS = 'janai-v2-kodik-mix75';
+
+/** Веса «Деталей» (~90 КБ) — из ассетов, на первом включении. */
+async function loadCompactModel(): Promise<CompactModel> {
+  const [metaResponse, weightsResponse] = await Promise.all([
+    fetch(`/assets/upscale/${COMPACT_WEIGHTS}/model.json`),
+    fetch(`/assets/upscale/${COMPACT_WEIGHTS}/weights.bin`),
+  ]);
+  if (!metaResponse.ok || !weightsResponse.ok) {
+    throw new Error('Не удалось загрузить нейросеть для «Деталей»');
+  }
+  return {
+    meta: (await metaResponse.json()) as CompactModel['meta'],
+    weights: await weightsResponse.arrayBuffer(),
+  };
+}
+
+// Повтор кадра (статичный план) цепочка не считает: на GPU он сравнивается
+// с прошлым и пропускается, на канве остаётся прошлый результат. Порог 0 —
+// только точные повторы, картинка та же.
+//
+// После x264 точных повторов почти нет: тот же рисунок отличается шумом
+// сжатия до ~16 уровней. «Деталям» — порог 16: пропускается ~25% кадров
+// Kodik; затемнения ворота сами не пропускают (средний сдвиг кадра).
+// Цвет «Детали» берут не из сети, а из сглаженного кадра (по умолчанию
+// пресета): сеть рисовала цветовые блоки сжатия 4:2:0 пятнами.
+const COMPACT_UNCHANGED_THRESHOLD = 16;
+
+/**
+ * Ядро «Деталей» по движку вебвью. На macOS и Linux это WebKit (WKWebView,
+ * WebKitGTK): там Winograd (`wino`) на 12% быстрее `fast`, а в Chromium
+ * (WebView2 на Windows) — на 23% медленнее. Разрыв не в нашем коде: WebKit
+ * исполняет то же ядро в 1.8 раза медленнее Chrome. Замеры — anionWebGPU,
+ * docs/PLAN.md, этап Э18.
+ */
+function compactKernel(): 'wino' | 'fast' {
+  const agent = navigator.userAgent;
+  return /AppleWebKit/.test(agent) && !/Chrome|Chromium|Edg\//.test(agent)
+    ? 'wino'
+    : 'fast';
+}
+
+const PRESETS: Record<ShaderMode, () => Promise<PresetFactory>> = {
+  c: async () => {
+    const { ModeC } = await import('anime4k-webgpu/presets/ModeC');
+    return (ctx) => new ModeC({ ...ctx, skipUnchanged: true });
+  },
+  ca: async () => {
+    const { ModeCA } = await import('anime4k-webgpu/presets/ModeCA');
+    return (ctx) => new ModeCA({ ...ctx, skipUnchanged: true });
+  },
+  compact: async () => {
+    const [{ ModeCompact }, model] = await Promise.all([
+      import('anime4k-webgpu/presets/ModeCompact'),
+      loadCompactModel(),
+    ]);
+    return (ctx) =>
+      new ModeCompact({
+        ...ctx,
+        model,
+        kernel: compactKernel(),
+        skipUnchanged: true,
+        unchangedThreshold: COMPACT_UNCHANGED_THRESHOLD,
+      });
+  },
+};
 
 /**
  * Собирает цепочку конвейеров режима.
@@ -196,17 +246,8 @@ interface BuildContext {
  * кратность и о цели ничего не знают. Поэтому размер канвы берётся не из
  * расчёта, а из выходной текстуры последнего звена — он единственный честный.
  */
-function buildChain(mode: ShaderMode, ctx: BuildContext): Anime4KPipeline[] {
-  const { modules, device, inputTexture, nativeDimensions, targetDimensions } =
-    ctx;
-  const preset = { device, inputTexture, nativeDimensions, targetDimensions };
-
-  switch (mode) {
-    case 'c':
-      return [new modules.ModeC(preset)];
-    case 'ca':
-      return [new modules.ModeCA(preset)];
-  }
+function buildChain(build: PresetFactory, ctx: BuildContext): Anime4KPipeline[] {
+  return [build(ctx)];
 }
 
 /**
@@ -261,31 +302,32 @@ export async function startUpscale({
   mode,
   onStats,
   onError,
+  onPreparing,
 }: UpscaleOptions): Promise<UpscaleHandle> {
   if (!isWebGpuAvailable()) {
     throw new Error('WebGPU недоступен в этом вебвью');
   }
 
-  const network = mode === 'compact';
+  onPreparing?.(true);
 
-  // Шейдеры Anime4K весят около 4 МБ и режиму сети не нужны вовсе.
-  const modules = network ? null : await loadPresets();
+  const build = await PRESETS[mode]();
 
-  const adapter = await navigator.gpu.requestAdapter();
+  // На ноутбуках с двумя видеокартами — дискретная: встроенная Mode C
+  // на 1080p+ не вытягивает.
+  const adapter = await navigator.gpu.requestAdapter({
+    powerPreference: 'high-performance',
+  });
   if (!adapter) {
     throw new Error('Видеокарта не отдала адаптер WebGPU');
   }
 
-  const device = await requestDevice(adapter, network);
+  const device = await requestDevice(adapter, mode === 'compact');
   const context = canvas.getContext('webgpu');
   if (!context) {
     throw new Error('Канва не отдала контекст WebGPU');
   }
 
   const format = navigator.gpu.getPreferredCanvasFormat();
-  const compact: CompactHandle | null = network
-    ? await createCompactRenderer(device, format)
-    : null;
   context.configure({ device, format, alphaMode: 'opaque' });
 
   const sampler = device.createSampler({
@@ -304,6 +346,16 @@ export async function startUpscale({
   let frameHandle: number | null = null;
   let idleHandle: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  /**
+   * Прошлый кадр ещё считается на GPU. Новый тогда пропускается: иначе на
+   * слабой видеокарте очередь растёт, картинка отстаёт от звука всё сильнее,
+   * а getCurrentTexture блокирует основной поток — тормозит весь интерфейс.
+   */
+  let inFlight = false;
+  /** Шейдеры текущей сборки скомпилированы; до этого кадры не рисуются. */
+  let compiled = false;
+  /** Номер сборки: ready прошлой сборки после пересборки не в счёт. */
+  let buildId = 0;
 
   const fail = (message: string): void => {
     if (!disposed) {
@@ -383,36 +435,9 @@ export async function startUpscale({
         GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    if (compact) {
-      // Кратность у сети фиксированная, и цель от размера окна не зависит:
-      // растянуть готовый кадр дешевле, чем считать сеть на лишние пиксели.
-      if (!fitsRealtime(width, height)) {
-        throw new Error(
-          `Кадр ${width}×${height} слишком велик для этого режима`
-        );
-      }
-
-      compact.resize(width, height);
-      canvas.width = width * compact.scale;
-      canvas.height = height * compact.scale;
-
-      builtFor = `${width}x${height}@${canvas.width}x${canvas.height}`;
-      sizeDirty = false;
-      stats = {
-        sourceWidth: width,
-        sourceHeight: height,
-        targetWidth: canvas.width,
-        targetHeight: canvas.height,
-        fps: 0,
-        videoFps: 0,
-      };
-      return;
-    }
-
     const targetDimensions = targetFor(width, height);
 
-    pipelines = buildChain(mode as ShaderMode, {
-      modules: modules as PresetModules,
+    pipelines = buildChain(build, {
       device,
       inputTexture: source,
       nativeDimensions: { width, height },
@@ -433,6 +458,25 @@ export async function startUpscale({
         { binding: 1, resource: output.createView() },
       ],
     });
+
+    // Шейдеры компилируются в фоне; пока не готовы, кадры пропускаются, а
+    // канва скрыта — под ней обычное видео.
+    compiled = false;
+    const id = ++buildId;
+    onPreparing?.(true);
+    void Promise.all(pipelines.map((pipeline) => pipeline.ready)).then(
+      () => {
+        if (id === buildId && !disposed) {
+          compiled = true;
+          onPreparing?.(false);
+        }
+      },
+      (error: unknown) => {
+        fail(
+          `Шейдеры не скомпилировались: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    );
 
     builtFor = `${width}x${height}@${targetDimensions.width}x${targetDimensions.height}`;
     sizeDirty = false;
@@ -498,8 +542,7 @@ export async function startUpscale({
       return;
     }
 
-    // У сети своя цепочка проходов, цепочки Anime4K и привязки блита нет.
-    if (!compact && (pipelines.length === 0 || !bindGroup)) {
+    if (pipelines.length === 0 || !bindGroup || !compiled) {
       return;
     }
 
@@ -507,6 +550,12 @@ export async function startUpscale({
     // сборку перерисовывать незачем — нужно только после перемотки.
     const frameKey = `${builtFor}#${video.currentTime}`;
     if (video.paused && frameKey === drawnKey) {
+      return;
+    }
+
+    // Кадр пропускается, а не копится в очередь. drawnKey не трогаем: на
+    // паузе следующий опрос дорисует пропущенный кадр.
+    if (inFlight) {
       return;
     }
     drawnKey = frameKey;
@@ -519,34 +568,33 @@ export async function startUpscale({
 
     const encoder = device.createCommandEncoder();
 
-    if (compact) {
-      // Сеть сама доводит кадр до канвы: её выход лежит в буфере, а не в
-      // текстуре, и общий блит для него не годится.
-      compact.draw(encoder, source, context.getCurrentTexture().createView());
-    } else if (bindGroup) {
-      // Звенья пишутся в один энкодер по порядку: выход предыдущего — вход
-      // следующего, связано ещё при сборке цепочки.
-      for (const stage of pipelines) {
-        stage.pass(encoder);
-      }
-
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: context.getCurrentTexture().createView(),
-            loadOp: 'clear',
-            storeOp: 'store',
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          },
-        ],
-      });
-      pass.setPipeline(blit);
-      pass.setBindGroup(0, bindGroup);
-      pass.draw(3);
-      pass.end();
+    // Звенья пишутся в один энкодер по порядку: выход предыдущего — вход
+    // следующего, связано ещё при сборке цепочки.
+    for (const stage of pipelines) {
+      stage.pass(encoder);
     }
 
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: context.getCurrentTexture().createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        },
+      ],
+    });
+    pass.setPipeline(blit);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
+
     device.queue.submit([encoder.finish()]);
+    inFlight = true;
+    const done = (): void => {
+      inFlight = false;
+    };
+    void device.queue.onSubmittedWorkDone().then(done, done);
 
     framesInWindow += 1;
 
@@ -645,7 +693,6 @@ export async function startUpscale({
       }
 
       release();
-      compact?.destroy();
       device.destroy();
     },
   };

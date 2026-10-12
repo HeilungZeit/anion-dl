@@ -1,0 +1,10 @@
+2x_AnimeJaNai_V2_SuperUltraCompact — веса нейросети режима «Детали».
+
+Автор: the-database, https://github.com/the-database/mpv-upscale-2x_animejanai
+Источник: релиз 2.0.0, архив 2x_AnimeJaNai_V2_ModelsOnly.zip,
+файл 2x_AnimeJaNai_V2_SuperUltraCompact_100k.onnx.
+Лицензия: CC BY-NC-SA 4.0, https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+weights.bin — те же веса (float16), переложенные в порядок чтения шейдера
+скриптом anion-dl/scripts/compact-to-wgsl.py; model.json — их описание.
+Использование только некоммерческое; производные — под той же лицензией.

@@ -209,6 +209,25 @@ export class WindowPlayerComponent {
     );
   });
 
+  /**
+   * Следующая серия для заранее готовой ссылки к автопереходу. Скачанной
+   * ссылка не нужна: она сыграет с диска.
+   */
+  readonly nextIframeUrl = computed(() => {
+    if (this.task()) {
+      return null;
+    }
+
+    const list = this.videos();
+    const current = this.selected();
+    const index = current
+      ? list.findIndex((video) => video.videoId === current.videoId)
+      : -1;
+    const next = index >= 0 ? list[index + 1] : undefined;
+
+    return next && !this.onDisk().has(next.videoId) ? next.iframeUrl : null;
+  });
+
   readonly startPositionSecs = computed(() => {
     const task = this.taskItem();
     if (task) {

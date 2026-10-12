@@ -5,6 +5,9 @@
 .player {
   position: relative;
   overflow: hidden;
+  // Панель подстраивается под ширину самого плеера, а не окна: отдельное
+  // окно плеера и узкая колонка бывают не шире телефона.
+  container: player / inline-size;
   aspect-ratio: 16 / 9;
   border: 1px solid var(--anion-surface-4);
   border-radius: var(--anion-radius-xl);
@@ -78,6 +81,35 @@
 
 .player__canvas--on {
   visibility: visible;
+}
+
+// Пока компилируются шейдеры (до секунд при первом включении), под плашкой
+// играет обычное видео — видно, что ничего не зависло. Без backdrop-filter:
+// плашка висит над играющим видео, и размытие пересчитывалось бы на каждом
+// кадре.
+.upscale-badge {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: var(--anion-space-16);
+  inset-inline-start: var(--anion-space-16);
+  display: flex;
+  align-items: center;
+  gap: var(--anion-space-8);
+  padding: var(--anion-space-6) var(--anion-space-12);
+  border-radius: var(--anion-radius-pill);
+  background: var(--anion-bg-scrim-strong);
+  color: var(--anion-text-on-brand);
+  font-size: var(--anion-font-size-13);
+  pointer-events: none;
+}
+
+.upscale-badge__spinner {
+  inline-size: var(--anion-space-12);
+  block-size: var(--anion-space-12);
+  border: 2px solid var(--anion-surface-5);
+  border-block-start-color: var(--anion-accent);
+  border-radius: var(--anion-radius-pill);
+  animation: spin 900ms linear infinite;
 }
 
 // Заставка из кадров серии до первого запуска. Кадры лежат стопкой и
@@ -336,7 +368,12 @@
   position: relative;
   block-size: 16px;
   cursor: pointer;
+  outline: none;
   touch-action: none;
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
 
   // Именно три полосы, а не любой span внутри: по специфичности `.seek span`
   // перебил бы `.seek__tip`, и подсказка превратилась бы в полоску 4px.
@@ -450,6 +487,7 @@
 .time {
   margin-inline-start: var(--anion-space-4);
   color: #fff;
+  white-space: nowrap;
   font-size: var(--anion-font-size-12);
   font-variant-numeric: tabular-nums;
 }
@@ -620,8 +658,95 @@
   font-weight: 700;
 }
 
+.quality__icon {
+  display: none;
+  font-size: var(--anion-icon-18);
+}
+
+// ——— узкий плеер ———
+//
+// Отдельное окно плеера можно сузить до ширины телефона. Вторичные контролы
+// тогда уходят, остаются play, звук, время, улучшение и качество: ±10 с
+// заменяют стрелки, громкость — колесо и клавиши, а справка по клавишам
+// открывается на «?».
+@container player (max-width: 640px) {
+  .controls__skip,
+  .controls__hotkeys,
+  .volume__slider {
+    display: none;
+  }
+
+  .bar {
+    padding: var(--anion-space-24) var(--anion-space-8) var(--anion-space-6);
+  }
+
+  .controls {
+    gap: 0;
+  }
+
+  .ghost {
+    padding: var(--anion-space-6) var(--anion-space-8);
+  }
+
+  .time {
+    margin-inline-start: var(--anion-space-2);
+    font-size: var(--anion-font-size-11);
+  }
+
+  .upscale .quality__label {
+    display: none;
+  }
+
+  .quality__icon {
+    display: inline-flex;
+  }
+
+  .quality__trigger {
+    min-inline-size: auto;
+  }
+
+  // Меню не должно вылезать за верх кадра: плеер режет всё по своим краям,
+  // а высота 16:9 — это 56% ширины.
+  .quality__menu {
+    max-block-size: calc(56cqw - 56px);
+    overflow-y: auto;
+  }
+
+  .quality__menu--wide {
+    min-inline-size: min(260px, 90cqw);
+  }
+
+  .bigplay {
+    inline-size: 60px;
+    block-size: 60px;
+
+    tui-icon {
+      font-size: 24px;
+    }
+  }
+
+  .skip,
+  .autonext {
+    inset-block-end: 60px;
+    inset-inline-end: var(--anion-space-8);
+    padding: var(--anion-space-8) var(--anion-space-12);
+    font-size: var(--anion-font-size-12);
+  }
+
+  .autonext {
+    gap: var(--anion-space-6);
+  }
+}
+
+@container player (max-width: 380px) {
+  .time__total {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .overlay__spinner {
+  .overlay__spinner,
+  .upscale-badge__spinner {
     animation: none;
   }
 

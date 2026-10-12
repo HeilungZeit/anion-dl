@@ -1,0 +1,104 @@
+{
+  "arch": "SRVGGNetCompact",
+  "license": "",
+  "numFeat": 24,
+  "numConv": 8,
+  "scale": 2,
+  "pack": 4,
+  "dtype": "float16",
+  "source": "0.75 · janai-v2 + 0.25 · janai-v2-kodik-ink8 (weights.bin, поэлементно)",
+  "sha256": "889360fbbd0bb72001133b3a5a1a059f94a492b0ead371867ce7e1b05ee31dd2",
+  "bytes": 90744,
+  "layers": [
+    {
+      "name": "/body/body.0/Conv",
+      "offset": 0,
+      "in": 3,
+      "out": 24,
+      "inGroups": 1,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.2/Conv",
+      "offset": 1824,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.4/Conv",
+      "offset": 12288,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.6/Conv",
+      "offset": 22752,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.8/Conv",
+      "offset": 33216,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.10/Conv",
+      "offset": 43680,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.12/Conv",
+      "offset": 54144,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.14/Conv",
+      "offset": 64608,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.16/Conv",
+      "offset": 75072,
+      "in": 24,
+      "out": 24,
+      "inGroups": 6,
+      "outGroups": 6,
+      "prelu": true
+    },
+    {
+      "name": "/body/body.18/Conv",
+      "offset": 85536,
+      "in": 24,
+      "out": 12,
+      "inGroups": 6,
+      "outGroups": 3,
+      "prelu": false
+    }
+  ]
+}

@@ -193,6 +193,21 @@ export class DescriptionTabComponent {
   });
 
   /**
+   * Следующая серия для заранее готовой ссылки к автопереходу. Скачанной
+   * ссылка не нужна: она сыграет с диска.
+   */
+  readonly nextIframeUrl = computed(() => {
+    const list = this.episodes();
+    const current = this.selectedEpisode();
+    const index = current
+      ? list.findIndex((video) => video.videoId === current.videoId)
+      : -1;
+    const next = index >= 0 ? list[index + 1] : undefined;
+
+    return next && !this.onDisk().has(next.videoId) ? next.iframeUrl : null;
+  });
+
+  /**
    * Заставка до первого нажатия.
    *
    * Постер тайтла вертикальный, и в кадре 16:9 он встал бы узкой полосой между

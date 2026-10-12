@@ -28,7 +28,7 @@
         "@tauri-apps/plugin-shell": "^2",
         "@tauri-apps/plugin-store": "^2",
         "@tauri-apps/plugin-updater": "^2",
-        "anime4k-webgpu": "^1.0.0",
+        "anime4k-webgpu": "github:HeilungZeit/anionWebGPU#v1.1.0-anion.8",
         "hls.js": "^1.7.3",
         "rxjs": "~7.8.2",
         "tslib": "^2.8.1",
@@ -491,7 +491,7 @@
 
     "ajv-formats": ["ajv-formats@3.0.1", "", { "dependencies": { "ajv": "^8.0.0" } }, "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ=="],
 
-    "anime4k-webgpu": ["anime4k-webgpu@1.0.0", "", { "peerDependencies": { "@webgpu/types": "^0.1.38" } }, "sha512-syZZyDRHYukFnDLxdES4AuMHzKwxlu5Lo52yhEEc1hwKQmvza8DGC62/VDPrrWOu4KArU5jh/0yFJQBwetGuxg=="],
+    "anime4k-webgpu": ["anime4k-webgpu@github:HeilungZeit/anionWebGPU#47ec876", { "peerDependencies": { "@webgpu/types": "^0.1.38" } }, "HeilungZeit-anionWebGPU-47ec876", "sha512-Dzi6RXVv3iyccKA/MgImhyE9dlG8hhRGzsncfkMb7as7yc2ACa2QjtAzGgZe8Ph3l94bkdVc/ayWuLSQRxzB5Q=="],
 
     "ansi-escapes": ["ansi-escapes@7.3.0", "", { "dependencies": { "environment": "^1.0.0" } }, "sha512-BvU8nYgGQBxcmMuEeUEmNTvrMVjJNSH7RgW24vXexN4Ven6qCvy4TntnvlnwnMLTVlcRQQdbRY8NKnaIoeWDNg=="],
 

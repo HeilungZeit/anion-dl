@@ -1,5 +1,6 @@
 <div
   class="player"
+  #player
   tabindex="0"
   [class.player--fullscreen]="isFullscreen()"
   [class.player--window]="isPlayerWindow"
@@ -31,8 +32,15 @@
     class="player__canvas"
     #canvas
     aria-hidden="true"
-    [class.player__canvas--on]="upscaleActive()"
+    [class.player__canvas--on]="upscaleActive() && !upscalePreparing()"
   ></canvas>
+
+  @if (upscaleActive() && upscalePreparing()) {
+    <div class="upscale-badge" role="status">
+      <span class="upscale-badge__spinner" aria-hidden="true"></span>
+      Готовлю улучшение…
+    </div>
+  }
 
   @if (showFrames()) {
     <div class="frames" aria-hidden="true">
@@ -75,7 +83,7 @@
     </div>
   } @else if (status() === 'error') {
     <div class="overlay overlay--error" role="alert">
-      <tui-icon icon="@tui.circle-alert" />
+      <tui-icon [icon]="offline() ? '@tui.wifi-off' : '@tui.circle-alert'" />
       <p>{{ errorText() }}</p>
       <button class="ghost ghost--outlined" type="button" (click)="retry()">
         Повторить
@@ -95,7 +103,7 @@
         class="bigplay"
         type="button"
         aria-label="Воспроизвести"
-        (click)="onVideoClick($event)"
+        (click)="onVideoClick($event); player.focus({ preventScroll: true })"
         (dblclick)="onVideoDoubleClick()"
       >
         <tui-icon icon="@tui.play" />
@@ -108,10 +116,10 @@
           Вы остановились на <strong>{{ formatTime(secs) }}</strong>
         </span>
         <span class="autonext__actions">
-          <button class="ghost ghost--outlined" type="button" (click)="startOver()">
+          <button class="ghost ghost--outlined" type="button" (click)="startOver(); player.focus({ preventScroll: true })">
             Сначала
           </button>
-          <button class="autonext__go" type="button" (click)="resumePlayback()">
+          <button class="autonext__go" type="button" (click)="resumePlayback(); player.focus({ preventScroll: true })">
             Продолжить
             <tui-icon icon="@tui.play" />
           </button>
@@ -123,17 +131,17 @@
           Следующая серия через <strong>{{ secs }}</strong>
         </span>
         <span class="autonext__actions">
-          <button class="ghost ghost--outlined" type="button" (click)="cancelAutoNext()">
+          <button class="ghost ghost--outlined" type="button" (click)="cancelAutoNext(); player.focus({ preventScroll: true })">
             Отмена
           </button>
-          <button class="autonext__go" type="button" (click)="goNext()">
+          <button class="autonext__go" type="button" (click)="goNext(); player.focus({ preventScroll: true })">
             Смотреть
             <tui-icon icon="@tui.chevrons-right" />
           </button>
         </span>
       </div>
     } @else if (skipHint(); as hint) {
-      <button class="skip" type="button" (click)="applySkip(hint)">
+      <button class="skip" type="button" (click)="applySkip(hint); player.focus({ preventScroll: true })">
         {{ hint.kind === 'opening' ? 'Пропустить опенинг' : 'Следующая серия' }}
         <tui-icon icon="@tui.chevrons-right" />
       </button>
@@ -144,10 +152,12 @@
         class="seek"
         #seek
         role="slider"
+        tabindex="0"
         aria-label="Перемотка"
-        [attr.aria-valuemax]="duration()"
+        [attr.aria-valuemax]="seekValueMax()"
         [attr.aria-valuemin]="0"
-        [attr.aria-valuenow]="shownPosition()"
+        [attr.aria-valuenow]="seekValueNow()"
+        [attr.aria-valuetext]="seekValueText()"
         (pointercancel)="scrubEnd($event, seek)"
         (pointerdown)="scrubStart($event, seek)"
         (pointerleave)="clearHover()"
@@ -183,7 +193,7 @@
         </button>
 
         <button
-          class="ghost ghost--icon"
+          class="ghost ghost--icon controls__skip"
           type="button"
           aria-label="Назад на 10 секунд"
           title="Назад на 10 секунд (←)"
@@ -193,7 +203,7 @@
         </button>
 
         <button
-          class="ghost ghost--icon"
+          class="ghost ghost--icon controls__skip"
           type="button"
           aria-label="Вперёд на 10 секунд"
           title="Вперёд на 10 секунд (→)"
@@ -235,8 +245,9 @@
 
         @if (upscaleSupported) {
           <details class="quality upscale" appAutoCloseMenu>
-            <summary class="ghost quality__trigger">
-              {{ upscaleMode() === 'off' ? 'Улучшение' : upscaleLabels[upscaleMode()].title }}
+            <summary class="ghost quality__trigger" aria-label="Улучшение картинки">
+              <tui-icon class="quality__icon" icon="@tui.sparkles" />
+              <span class="quality__label">{{ upscaleMode() === 'off' ? 'Улучшение' : upscaleLabels[upscaleMode()].title }}</span>
             </summary>
             <div class="quality__menu quality__menu--wide">
               <p class="quality__heading">Улучшение картинки</p>
@@ -262,7 +273,7 @@
                   {{ stats.fps }} кадр/с
                 </p>
               } @else if (upscaleMode() !== 'off') {
-                <p class="quality__note quality__note--ok">Включаю…</p>
+                <p class="quality__note quality__note--ok">Готовлю улучшение…</p>
               }
             </div>
           </details>
@@ -314,7 +325,7 @@
         }
 
         <button
-          class="ghost ghost--icon"
+          class="ghost ghost--icon controls__hotkeys"
           type="button"
           aria-label="Горячие клавиши"
           title="Горячие клавиши (?)"

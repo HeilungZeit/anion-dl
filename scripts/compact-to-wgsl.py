@@ -16,7 +16,7 @@ onnxruntime.
 Использование:
 
     compact-to-wgsl.py selftest
-    compact-to-wgsl.py convert model.onnx src/assets/upscale/
+    compact-to-wgsl.py convert model.onnx src/assets/upscale/<каталог весов>/
 
 `selftest` собирает синтетическую сеть той же архитектуры и гоняет её через
 весь тракт. Он не требует скачанных весов и должен проходить всегда.
