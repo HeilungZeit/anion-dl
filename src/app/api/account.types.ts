@@ -58,6 +58,7 @@ export const BookmarkStatus = {
   Watching: 'watching',
   WillWatch: 'will_watch',
   Watched: 'watched',
+  Rewatching: 'rewatching',
   OnHold: 'on_hold',
   Dropped: 'dropped',
 } as const;
@@ -90,6 +91,7 @@ export interface BookmarksResponse {
   watching: Bookmark[];
   willWatch: Bookmark[];
   watched: Bookmark[];
+  rewatching: Bookmark[];
   onHold: Bookmark[];
   dropped: Bookmark[];
 }

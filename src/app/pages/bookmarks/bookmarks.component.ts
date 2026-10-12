@@ -45,6 +45,7 @@ const TABS: readonly BookmarkTab[] = [
   { key: 'watching', icon: '@tui.play', status: BookmarkStatus.Watching, label: 'Смотрю' },
   { key: 'will_watch', icon: '@tui.clock', status: BookmarkStatus.WillWatch, label: 'Буду смотреть' },
   { key: 'watched', icon: '@tui.check', status: BookmarkStatus.Watched, label: 'Просмотрено' },
+  { key: 'rewatching', icon: '@tui.repeat', status: BookmarkStatus.Rewatching, label: 'Пересматриваю' },
   { key: 'on_hold', icon: '@tui.pause', status: BookmarkStatus.OnHold, label: 'Отложено' },
   { key: 'dropped', icon: '@tui.x', status: BookmarkStatus.Dropped, label: 'Брошено' },
 ];

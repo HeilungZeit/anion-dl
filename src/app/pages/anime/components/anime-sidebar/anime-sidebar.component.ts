@@ -24,6 +24,7 @@ const STATUSES: readonly { value: BookmarkStatusValue; label: string }[] = [
   { value: BookmarkStatus.Watching, label: 'Смотрю' },
   { value: BookmarkStatus.WillWatch, label: 'Буду смотреть' },
   { value: BookmarkStatus.Watched, label: 'Просмотрено' },
+  { value: BookmarkStatus.Rewatching, label: 'Пересматриваю' },
   { value: BookmarkStatus.OnHold, label: 'Отложено' },
   { value: BookmarkStatus.Dropped, label: 'Брошено' },
 ];
