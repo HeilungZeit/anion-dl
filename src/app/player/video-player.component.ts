@@ -2594,6 +2594,18 @@ export class VideoPlayerComponent {
     }
   }
 
+  /** «Пропускать всегда»: включить автопропуск и пропустить уже этот опенинг. */
+  alwaysSkipOpening(hint: SkipHint): void {
+    this.setAutoSkipOpening(true);
+    this.applySkip(hint);
+  }
+
+  /** «Больше не пропускать» из отсчёта: выключить и досмотреть этот опенинг. */
+  disableAutoSkip(): void {
+    this.setAutoSkipOpening(false);
+    this.declineAutoSkip();
+  }
+
   /** «Смотреть опенинг»: в этой серии больше не предлагать. */
   declineAutoSkip(): void {
     this.openingAutoHandled = true;
@@ -2610,7 +2622,10 @@ export class VideoPlayerComponent {
   }
 
   toggleAutoSkipOpening(): void {
-    const enabled = !this.autoSkipOpening();
+    this.setAutoSkipOpening(!this.autoSkipOpening());
+  }
+
+  private setAutoSkipOpening(enabled: boolean): void {
     this.autoSkipOpening.set(enabled);
     this.measurement?.feature('auto_skip', enabled ? 'on' : 'off');
     void this.settings.setAutoSkipOpening(enabled).catch(() => undefined);

@@ -673,11 +673,21 @@
   }
 }
 
-.skip {
+// «Пропустить опенинг» и рядом — «Пропускать всегда»: настройка видна
+// ровно тогда, когда о ней думают.
+.skips {
   position: absolute;
   z-index: 3;
   inset-block-end: 84px;
   inset-inline-end: var(--anion-space-20);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--anion-space-8);
+  max-inline-size: calc(100% - 2 * var(--anion-space-8));
+}
+
+.skip {
   display: inline-flex;
   align-items: center;
   gap: var(--anion-space-6);
@@ -702,6 +712,11 @@
   &:focus-visible {
     box-shadow: var(--anion-focus-ring);
   }
+}
+
+.skip--secondary {
+  background: rgb(0 0 0 / 48%);
+  font-weight: 500;
 }
 
 // Отсчёт до следующей серии стоит там же, где кнопка «Следующая серия»:
@@ -729,6 +744,7 @@
 
 .autonext__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--anion-space-8);
   justify-content: flex-end;
 }
@@ -971,6 +987,11 @@
   border-color: var(--anion-border-strong);
 }
 
+// Включённый переключатель: кинотеатр, автопропуск опенинга.
+.ghost--active {
+  color: var(--anion-accent-text);
+}
+
 .ghost--icon {
   inline-size: 34px;
   block-size: 34px;
@@ -1141,45 +1162,6 @@
   &:focus-visible {
     background: var(--anion-surface-3);
     color: var(--anion-text-primary);
-  }
-}
-
-.quality__toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--anion-space-12);
-  margin-block-start: var(--anion-space-4);
-  white-space: nowrap;
-}
-
-.quality__switch {
-  position: relative;
-  flex: none;
-  inline-size: 28px;
-  block-size: 16px;
-  border-radius: var(--anion-radius-pill);
-  background: rgb(255 255 255 / 24%);
-  transition: background var(--anion-duration-fast) ease;
-
-  &::after {
-    position: absolute;
-    inset-block-start: 2px;
-    inset-inline-start: 2px;
-    inline-size: 12px;
-    block-size: 12px;
-    border-radius: var(--anion-radius-pill);
-    background: #fff;
-    content: '';
-    transition: translate var(--anion-duration-fast) ease;
-  }
-}
-
-.quality__switch--on {
-  background: var(--anion-accent);
-
-  &::after {
-    translate: 12px 0;
   }
 }
 
@@ -1370,10 +1352,14 @@
     }
   }
 
-  .skip,
+  .skips,
   .autonext {
     inset-block-end: 60px;
     inset-inline-end: var(--anion-space-8);
+  }
+
+  .skip,
+  .autonext {
     padding: var(--anion-space-8) var(--anion-space-12);
     font-size: var(--anion-font-size-12);
   }

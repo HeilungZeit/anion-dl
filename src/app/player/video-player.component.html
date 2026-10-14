@@ -289,6 +289,9 @@
           Пропуск опенинга через <strong>{{ secs }}</strong>
         </span>
         <span class="autonext__actions">
+          <button class="ghost ghost--outlined" type="button" (click)="disableAutoSkip(); player.focus({ preventScroll: true })">
+            Больше не пропускать
+          </button>
           <button class="ghost ghost--outlined" type="button" (click)="declineAutoSkip(); player.focus({ preventScroll: true })">
             Смотреть
           </button>
@@ -299,16 +302,25 @@
         </span>
       </div>
     } @else if (skipHint(); as hint) {
-      <button
-        class="skip"
-        type="button"
-        animate.enter="card--enter"
-        animate.leave="card--leave"
-        (click)="applySkip(hint); player.focus({ preventScroll: true })"
-      >
-        {{ hint.kind === 'opening' ? 'Пропустить опенинг' : 'Следующая серия' }}
-        <tui-icon icon="@tui.chevrons-right" />
-      </button>
+      <div class="skips" animate.enter="card--enter" animate.leave="card--leave">
+        @if (hint.kind === 'opening' && !autoSkipOpening()) {
+          <button
+            class="skip skip--secondary"
+            type="button"
+            (click)="alwaysSkipOpening(hint); player.focus({ preventScroll: true })"
+          >
+            Пропускать всегда
+          </button>
+        }
+        <button
+          class="skip"
+          type="button"
+          (click)="applySkip(hint); player.focus({ preventScroll: true })"
+        >
+          {{ hint.kind === 'opening' ? 'Пропустить опенинг' : 'Следующая серия' }}
+          <tui-icon icon="@tui.chevrons-right" />
+        </button>
+      </div>
     }
 
     <div class="bar" [attr.inert]="pickerOpen() ? '' : null">
@@ -436,6 +448,24 @@
           <span class="time__total">/ {{ formatTime(duration()) }}</span>
         </span>
 
+        @if (skips().opening !== undefined) {
+          <button
+            class="ghost ghost--icon"
+            type="button"
+            aria-label="Автопропуск опенинга"
+            [class.ghost--active]="autoSkipOpening()"
+            [attr.aria-pressed]="autoSkipOpening()"
+            [attr.data-tip]="
+              autoSkipOpening()
+                ? 'Автопропуск опенинга включён'
+                : 'Автопропуск опенинга выключен'
+            "
+            (click)="toggleAutoSkipOpening()"
+          >
+            <tui-icon icon="@tui.chevrons-right" />
+          </button>
+        }
+
         @if (upscaleSupported) {
           <details class="quality upscale" appAutoCloseMenu>
             <summary class="ghost quality__trigger" aria-label="Улучшение картинки">
@@ -501,20 +531,6 @@
               @if (qualityNote()) {
                 <p class="quality__note">{{ qualityNote() }}</p>
               }
-              <button
-                class="quality__option quality__toggle"
-                type="button"
-                role="switch"
-                [attr.aria-checked]="autoSkipOpening()"
-                (click)="toggleAutoSkipOpening()"
-              >
-                Автопропуск опенинга
-                <span
-                  class="quality__switch"
-                  aria-hidden="true"
-                  [class.quality__switch--on]="autoSkipOpening()"
-                ></span>
-              </button>
             </div>
           </details>
         }
