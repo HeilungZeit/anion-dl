@@ -1,6 +1,6 @@
 [package]
 name = "anion-dl"
-version = "2.9.1"
+version = "2.10.0"
 description = "Оффлайн-качалка серий для anion"
 authors = ["Dmitry Gavrichenko"]
 edition = "2021"
