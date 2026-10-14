@@ -30,7 +30,10 @@
     } @else {
       <app-video-player
         [iframeUrl]="current.iframeUrl"
+        [isFirstEpisode]="previousTask() === null"
         [isLastEpisode]="nextTask() === null"
+        [previousEpisodeLabel]="previousTask() ? 'серия ' + previousTask()!.episode : ''"
+        [nextEpisodeLabel]="nextTask() ? 'серия ' + nextTask()!.episode : ''"
         [localPath]="current.outputPath"
         [nowPlaying]="{
           title: current.title,
@@ -40,10 +43,12 @@
         }"
         [poster]="current.poster?.big ?? ''"
         [startPositionSecs]="startPositionSecs()"
+        [telemetryTarget]="telemetryTarget()"
         [detachRoute]="detachRoute()"
         (detach)="detachToWindow($event)"
         (ended)="markEnded($event)"
         (nextEpisode)="goNext()"
+        (previousEpisode)="goPrevious()"
         (playbackPaused)="saveAndFlush($event)"
         (playbackStarted)="markWatched()"
         (progress)="saveProgress($event)"

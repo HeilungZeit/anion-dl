@@ -1,0 +1,203 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+  color: #fff;
+  font-size: var(--anion-font-size-14);
+}
+
+button {
+  border: 1px solid transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--anion-duration-fast) ease;
+  &:hover:not(:disabled) {
+    background: rgb(255 255 255 / 12%);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--anion-accent);
+    outline-offset: -2px;
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.picker__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 12px;
+  h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  p {
+    margin: 6px 0 0;
+    color: rgb(255 255 255 / 65%);
+    font-size: 13px;
+  }
+}
+.picker__close {
+  flex-shrink: 0;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: 12px;
+  background: transparent;
+}
+.picker__tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 20px 12px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 6%);
+  button {
+    flex: 1;
+    min-block-size: 40px;
+    border-radius: 8px;
+    background: transparent;
+  }
+  [aria-pressed='true'] {
+    background: rgb(255 255 255 / 12%);
+  }
+}
+.picker__error,
+.picker__status {
+  margin: 0 20px 12px;
+  font-size: 13px;
+}
+.picker__error {
+  color: #ffb4ab;
+}
+.picker__status {
+  color: rgb(255 255 255 / 65%);
+}
+.picker__ranges {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 20px 12px;
+  button {
+    flex-shrink: 0;
+    min-block-size: 36px;
+    border-radius: 8px;
+    padding: 0 10px;
+    background: rgb(255 255 255 / 6%);
+  }
+  [aria-pressed='true'] {
+    border-color: var(--anion-accent);
+  }
+}
+.picker__list {
+  position: relative;
+  min-block-size: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 20px 20px;
+  touch-action: pan-y;
+}
+.picker__episodes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.picker__episode {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: 56px;
+  padding: 12px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 6%);
+  &[aria-current='true'] {
+    border-color: var(--anion-accent);
+    background: color-mix(in srgb, var(--anion-accent) 20%, transparent);
+  }
+}
+.picker__number {
+  font-size: 16px;
+  font-weight: 600;
+}
+.picker__badge {
+  display: flex;
+  tui-icon {
+    font-size: 14px;
+  }
+}
+.picker__progress {
+  position: absolute;
+  inset: auto 0 0;
+  block-size: 3px;
+  background: rgb(255 255 255 / 10%);
+  span {
+    display: block;
+    block-size: 100%;
+    background: var(--anion-accent);
+  }
+}
+.picker__group {
+  margin: 6px 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(255 255 255 / 55%);
+}
+.picker__dubbing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  inline-size: 100%;
+  min-block-size: 60px;
+  padding: 10px 12px;
+  margin-block-end: 6px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 6%);
+  text-align: start;
+  &[aria-pressed='true'] {
+    border-color: var(--anion-accent);
+    background: color-mix(in srgb, var(--anion-accent) 20%, transparent);
+  }
+  strong {
+    display: block;
+    font-weight: 500;
+  }
+  small {
+    display: block;
+    margin-block-start: 4px;
+    font-size: 12px;
+    color: rgb(255 255 255 / 60%);
+  }
+  tui-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+}
+.picker__spinner {
+  display: block;
+  inline-size: 16px;
+  block-size: 16px;
+  border: 2px solid rgb(255 255 255 / 25%);
+  border-block-start-color: #fff;
+  border-radius: 50%;
+  animation: picker-spin 1s linear infinite;
+}
+@keyframes picker-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .picker__spinner {
+    animation: none;
+  }
+}

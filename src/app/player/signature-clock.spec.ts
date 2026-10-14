@@ -11,10 +11,10 @@ const MANIFEST =
   'https://cloud.solodcdn.com/useruploads/f9b95698-508a-4f6e-b8c7-c16eab9d82bc/' +
   '0ba8f2499d9be2ca28922e652bb620b0:2026091809/720.mp4:hls:manifest.m3u8';
 
-const EXPIRY = Date.UTC(2026, 8, 18, 9, 0, 0, 0);
+const EXPIRY = Date.UTC(2026, 8, 18, 6, 0, 0, 0);
 
 describe('expiryEpochMs', () => {
-  test('читает штамп живого манифеста как UTC', () => {
+  test('читает штамп живого манифеста как московское время', () => {
     expect(expiryEpochMs(MANIFEST)).toBe(EXPIRY);
   });
 

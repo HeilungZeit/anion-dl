@@ -8,6 +8,7 @@ import {
   provideRouter,
   withComponentInputBinding,
   withInMemoryScrolling,
+  withViewTransitions,
 } from '@angular/router';
 import { provideTaiga } from '@taiga-ui/core';
 
@@ -27,7 +28,10 @@ export const appConfig: ApplicationConfig = {
         scrollPositionRestoration: 'top',
         anchorScrolling: 'disabled',
       }),
-      withComponentInputBinding()
+      withComponentInputBinding(),
+      // Страницы сменяются коротким перекрёстным затуханием, как на сайте.
+      // Где API нет (старый WKWebView), роутер просто переключает без него.
+      withViewTransitions({ skipInitialTransition: true })
     ),
     provideTaiga(),
   ],

@@ -1,10 +1,25 @@
+@if (theater()) {
+  <div
+    class="theater-backdrop"
+    aria-hidden="true"
+    animate.enter="theater-backdrop--enter"
+    [class.theater-backdrop--leave]="theaterLeaving()"
+    (click)="toggleTheater()"
+  ></div>
+}
+
 <div
   class="player"
   #player
   tabindex="0"
   [class.player--fullscreen]="isFullscreen()"
   [class.player--window]="isPlayerWindow"
+  [class.player--theater]="theater()"
+  [class.player--theater-leave]="theaterLeaving()"
+  [class.player--mini]="mini()"
   [class.player--idle]="!controlsVisible()"
+  [class.player--picker-open]="pickerOpen()"
+  [class.player--stalled]="buffering() && !paused() && framePainted()"
   (keydown)="onKeydown($event)"
   (pointerleave)="hideControlsSoon()"
 >
@@ -43,7 +58,7 @@
   }
 
   @if (showFrames()) {
-    <div class="frames" aria-hidden="true">
+    <div class="frames" aria-hidden="true" animate.leave="frames--leave">
       @for (frame of mountedFrames(); track frame.url) {
         <img
           class="frames__image"
@@ -76,6 +91,64 @@
     }
   }
 
+  @if ((isFullscreen() || theater()) && nowPlaying(); as info) {
+    <div class="topbar" [attr.inert]="pickerOpen() ? '' : null">
+      <div class="topbar__info">
+        <span class="topbar__title">{{ info.title }}</span>
+        <span class="topbar__meta">
+          {{ info.episode }} серия@if (info.dubbing) { · {{ info.dubbing }}}
+        </span>
+      </div>
+      @if (nativeOptions().length) {
+        <button
+          #pickerTrigger
+          class="topbar__picker"
+          type="button"
+          aria-label="Серии и озвучка"
+          aria-haspopup="dialog"
+          [attr.aria-expanded]="pickerOpen()"
+          [disabled]="status() === 'resolving'"
+          (click)="openPicker()"
+        >
+          <tui-icon icon="@tui.list-video" />
+          <span>Серии и озвучка</span>
+        </button>
+      }
+    </div>
+  }
+
+  @if (pickerOpen()) {
+    <div
+      class="picker-layer"
+      animate.enter="picker-layer--enter"
+      animate.leave="picker-layer--leave"
+      (keydown)="onPickerKeydown($event)"
+    >
+      <div
+        class="picker-layer__shade"
+        aria-hidden="true"
+        (click)="closePicker()"
+      ></div>
+      <section
+        class="picker-layer__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="playback-picker-title"
+        cdkTrapFocus
+        [cdkTrapFocusAutoCapture]="true"
+      >
+        <app-playback-picker
+          [options]="nativeOptions()"
+          [currentUrl]="iframeUrl()"
+          [pendingUrl]="selectionPending()"
+          [error]="selectionError()"
+          (choose)="selectPlayback($event)"
+          (closed)="closePicker()"
+        />
+      </section>
+    </div>
+  }
+
   @if (status() === 'resolving') {
     <div class="overlay">
       <span class="overlay__spinner" aria-hidden="true"></span>
@@ -98,10 +171,52 @@
       ></span>
     }
 
+    @if (nowPlaying(); as info) {
+      @for (id of episodeToast(); track id) {
+        <div class="hud hud--episode" role="status" animate.leave="hud--leave">
+          {{ info.episode }} серия@if (info.dubbing) { · {{ info.dubbing }}}
+        </div>
+      }
+    }
+
+    @for (id of playFlash(); track id) {
+      <div class="flash" aria-hidden="true">
+        <tui-icon icon="@tui.play" />
+      </div>
+    }
+
+    @if (volumeHud(); as level) {
+      <div class="hud" aria-hidden="true" animate.leave="hud--leave">
+        <tui-icon icon="@tui.volume-2" />
+        {{ level }}%
+      </div>
+    } @else if (volumeHud() === 0) {
+      <div class="hud" aria-hidden="true" animate.leave="hud--leave">
+        <tui-icon icon="@tui.volume-x" />
+        Без звука
+      </div>
+    }
+
+    @if (seekBadge(); as badge) {
+      <div
+        class="tapseek"
+        aria-hidden="true"
+        animate.leave="tapseek--leave"
+        [class.tapseek--back]="badge.side < 0"
+      >
+        <tui-icon
+          [icon]="badge.side < 0 ? '@tui.rewind' : '@tui.fast-forward'"
+        />
+        {{ badge.secs }} с
+      </div>
+    }
+
     @if (paused()) {
       <button
         class="bigplay"
         type="button"
+        animate.enter="bigplay--enter"
+        animate.leave="bigplay--leave"
         aria-label="Воспроизвести"
         (click)="onVideoClick($event); player.focus({ preventScroll: true })"
         (dblclick)="onVideoDoubleClick()"
@@ -111,7 +226,12 @@
     }
 
     @if (resumeOffer(); as secs) {
-      <div class="autonext" role="status">
+      <div
+        class="autonext"
+        role="status"
+        animate.enter="card--enter"
+        animate.leave="card--leave"
+      >
         <span class="autonext__text">
           Вы остановились на <strong>{{ formatTime(secs) }}</strong>
         </span>
@@ -126,7 +246,12 @@
         </span>
       </div>
     } @else if (autoNextSecs(); as secs) {
-      <div class="autonext" role="status">
+      <div
+        class="autonext"
+        role="status"
+        animate.enter="card--enter"
+        animate.leave="card--leave"
+      >
         <span class="autonext__text">
           Следующая серия через <strong>{{ secs }}</strong>
         </span>
@@ -136,18 +261,57 @@
           </button>
           <button class="autonext__go" type="button" (click)="goNext(); player.focus({ preventScroll: true })">
             Смотреть
+            <span class="autonext__ring" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle class="autonext__ring-track" cx="12" cy="12" r="10.5" />
+                <circle
+                  class="autonext__ring-fill"
+                  cx="12"
+                  cy="12"
+                  r="10.5"
+                  pathLength="100"
+                  [style.animation-duration.s]="autoNextTotalSecs"
+                />
+              </svg>
+              <tui-icon icon="@tui.chevrons-right" />
+            </span>
+          </button>
+        </span>
+      </div>
+    } @else if (autoSkipSecs(); as secs) {
+      <div
+        class="autonext"
+        role="status"
+        animate.enter="card--enter"
+        animate.leave="card--leave"
+      >
+        <span class="autonext__text">
+          Пропуск опенинга через <strong>{{ secs }}</strong>
+        </span>
+        <span class="autonext__actions">
+          <button class="ghost ghost--outlined" type="button" (click)="declineAutoSkip(); player.focus({ preventScroll: true })">
+            Смотреть
+          </button>
+          <button class="autonext__go" type="button" (click)="skipOpeningNow(); player.focus({ preventScroll: true })">
+            Пропустить
             <tui-icon icon="@tui.chevrons-right" />
           </button>
         </span>
       </div>
     } @else if (skipHint(); as hint) {
-      <button class="skip" type="button" (click)="applySkip(hint); player.focus({ preventScroll: true })">
+      <button
+        class="skip"
+        type="button"
+        animate.enter="card--enter"
+        animate.leave="card--leave"
+        (click)="applySkip(hint); player.focus({ preventScroll: true })"
+      >
         {{ hint.kind === 'opening' ? 'Пропустить опенинг' : 'Следующая серия' }}
         <tui-icon icon="@tui.chevrons-right" />
       </button>
     }
 
-    <div class="bar">
+    <div class="bar" [attr.inert]="pickerOpen() ? '' : null">
       <div
         class="seek"
         #seek
@@ -166,6 +330,9 @@
       >
         @if (hoverSecs(); as secs) {
           <span class="seek__tip" [style.left.%]="hoverPercent()">
+            @if (hoverMark(); as mark) {
+              <span class="seek__tip-mark">{{ mark }}</span>
+            }
             {{ formatTime(secs) }}
           </span>
         }
@@ -175,9 +342,24 @@
           class="seek__buffer"
           [style.width.%]="duration() ? (bufferedTo() / duration()) * 100 : 0"
         ></span>
+        @for (mark of seekMarks(); track mark.kind) {
+          <span
+            class="seek__mark"
+            [style.left.%]="mark.start"
+            [style.width.%]="mark.width"
+          ></span>
+        }
+        @if (hoverSecs() !== null) {
+          <span class="seek__hover" [style.width.%]="hoverPercent()"></span>
+        }
         <span
           class="seek__fill"
           [style.width.%]="duration() ? (shownPosition() / duration()) * 100 : 0"
+        ></span>
+        <span
+          class="seek__thumb"
+          [class.seek__thumb--active]="scrubSecs() !== null"
+          [style.left.%]="duration() ? (shownPosition() / duration()) * 100 : 0"
         ></span>
       </div>
 
@@ -186,30 +368,40 @@
           class="ghost ghost--icon"
           type="button"
           [attr.aria-label]="paused() ? 'Воспроизвести' : 'Пауза'"
-          [title]="(paused() ? 'Воспроизвести' : 'Пауза') + ' (пробел)'"
+          [attr.data-tip]="(paused() ? 'Воспроизвести' : 'Пауза') + ' (пробел)'"
           (click)="togglePlay()"
         >
           <tui-icon [icon]="paused() ? '@tui.play' : '@tui.pause'" />
         </button>
 
         <button
-          class="ghost ghost--icon controls__skip"
+          class="ghost ghost--icon"
           type="button"
-          aria-label="Назад на 10 секунд"
-          title="Назад на 10 секунд (←)"
-          (click)="seekBy(-10)"
+          aria-label="Предыдущая серия"
+          [attr.data-tip]="
+            previousEpisodeLabel()
+              ? 'Предыдущая: ' + previousEpisodeLabel()
+              : 'Предыдущая серия'
+          "
+          [disabled]="isFirstEpisode()"
+          (click)="goPrevious(); player.focus({ preventScroll: true })"
         >
-          <tui-icon icon="@tui.rotate-ccw" />
+          <tui-icon icon="@tui.skip-back" />
         </button>
 
         <button
-          class="ghost ghost--icon controls__skip"
+          class="ghost ghost--icon"
           type="button"
-          aria-label="Вперёд на 10 секунд"
-          title="Вперёд на 10 секунд (→)"
-          (click)="seekBy(10)"
+          aria-label="Следующая серия"
+          [attr.data-tip]="
+            (nextEpisodeLabel()
+              ? 'Следующая: ' + nextEpisodeLabel()
+              : 'Следующая серия') + ' (N)'
+          "
+          [disabled]="isLastEpisode()"
+          (click)="goNext(); player.focus({ preventScroll: true })"
         >
-          <tui-icon icon="@tui.rotate-cw" />
+          <tui-icon icon="@tui.skip-forward" />
         </button>
 
         <div class="volume">
@@ -217,7 +409,7 @@
             class="ghost ghost--icon"
             type="button"
             [attr.aria-label]="muted() ? 'Включить звук' : 'Выключить звук'"
-            [title]="(muted() ? 'Включить звук' : 'Выключить звук') + ' (M)'"
+            [attr.data-tip]="(muted() ? 'Включить звук' : 'Выключить звук') + ' (M)'"
             (click)="toggleMuted()"
           >
             <tui-icon
@@ -234,6 +426,7 @@
             step="0.05"
             aria-label="Громкость"
             [value]="muted() ? 0 : volume()"
+            [style.--volume-fill.%]="(muted() ? 0 : volume()) * 100"
             (input)="onVolumeInput($event)"
           />
         </div>
@@ -308,6 +501,20 @@
               @if (qualityNote()) {
                 <p class="quality__note">{{ qualityNote() }}</p>
               }
+              <button
+                class="quality__option quality__toggle"
+                type="button"
+                role="switch"
+                [attr.aria-checked]="autoSkipOpening()"
+                (click)="toggleAutoSkipOpening()"
+              >
+                Автопропуск опенинга
+                <span
+                  class="quality__switch"
+                  aria-hidden="true"
+                  [class.quality__switch--on]="autoSkipOpening()"
+                ></span>
+              </button>
             </div>
           </details>
         }
@@ -317,7 +524,7 @@
             class="ghost ghost--icon"
             type="button"
             aria-label="Картинка в картинке"
-            title="Картинка в картинке (P)"
+            data-tip="Картинка в картинке (P)"
             (click)="togglePip()"
           >
             <tui-icon icon="@tui.square-arrow-out-up-right" />
@@ -328,7 +535,7 @@
           class="ghost ghost--icon controls__hotkeys"
           type="button"
           aria-label="Горячие клавиши"
-          title="Горячие клавиши (?)"
+          data-tip="Горячие клавиши (?)"
           [attr.aria-expanded]="helpOpen()"
           (click)="toggleHelp()"
         >
@@ -340,10 +547,24 @@
             class="ghost ghost--icon"
             type="button"
             aria-label="Открыть в отдельном окне"
-            title="Открыть в отдельном окне"
+            data-tip="Открыть в отдельном окне"
             (click)="detachToWindow()"
           >
             <tui-icon icon="@tui.picture-in-picture-2" />
+          </button>
+        }
+
+        @if (!isFullscreen() && !isPlayerWindow) {
+          <button
+            class="ghost ghost--icon controls__theater"
+            type="button"
+            [class.ghost--active]="theater()"
+            [attr.aria-label]="theater() ? 'Выйти из режима кинотеатра' : 'Режим кинотеатра'"
+            [attr.aria-pressed]="theater()"
+            [attr.data-tip]="(theater() ? 'Выйти из кинотеатра' : 'Кинотеатр') + ' (T)'"
+            (click)="toggleTheater()"
+          >
+            <tui-icon icon="@tui.rectangle-horizontal" />
           </button>
         }
 
@@ -353,7 +574,7 @@
           [attr.aria-label]="
             isFullscreen() ? 'Выйти из полного экрана' : 'Во весь экран'
           "
-          [title]="
+          [attr.data-tip]="
             (isFullscreen() ? 'Выйти из полного экрана' : 'Во весь экран') +
             ' (F)'
           "
@@ -363,6 +584,27 @@
         </button>
       </div>
     </div>
+
+    @if (mini()) {
+      <div class="mini-actions">
+        <button
+          class="mini-actions__button"
+          type="button"
+          aria-label="Вернуться к плееру"
+          (click)="returnFromMini()"
+        >
+          <tui-icon icon="@tui.maximize-2" />
+        </button>
+        <button
+          class="mini-actions__button"
+          type="button"
+          aria-label="Закрыть мини-плеер"
+          (click)="closeMini()"
+        >
+          <tui-icon icon="@tui.x" />
+        </button>
+      </div>
+    }
 
     @if (helpOpen()) {
       <div

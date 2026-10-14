@@ -27,6 +27,8 @@ const QUALITY_KEY = 'quality';
  * загрузок, и второй файл ради одного ключа не нужен.
  */
 const SOURCE_KEY = 'source';
+/** Опенинг пропускается сам — после отсчёта, который можно отменить. */
+const AUTO_SKIP_OPENING_KEY = 'autoSkipOpening';
 
 /**
  * Только качества из меню: старое или поправленное руками значение — мимо.
@@ -104,6 +106,15 @@ export class PlayerSettingsService {
 
   async setVolume(setting: VolumeSetting): Promise<void> {
     await this.store.set(VOLUME_KEY, setting);
+    await this.store.save();
+  }
+
+  async getAutoSkipOpening(): Promise<boolean> {
+    return (await this.store.get<unknown>(AUTO_SKIP_OPENING_KEY)) === true;
+  }
+
+  async setAutoSkipOpening(enabled: boolean): Promise<void> {
+    await this.store.set(AUTO_SKIP_OPENING_KEY, enabled);
     await this.store.save();
   }
 }

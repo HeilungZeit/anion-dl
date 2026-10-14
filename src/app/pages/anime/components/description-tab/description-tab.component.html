@@ -105,8 +105,13 @@
         <app-video-player
           [iframeUrl]="episode.iframeUrl"
           [localPath]="localPath()"
+          [isFirstEpisode]="isFirstEpisode()"
           [isLastEpisode]="isLastEpisode()"
+          [previousEpisodeLabel]="previousEpisodeLabel()"
+          [nextEpisodeLabel]="nextEpisodeLabel()"
           [nextIframeUrl]="nextIframeUrl()"
+          [nativeOptions]="nativeOptions()"
+          [telemetryTarget]="telemetryTarget()"
           [frames]="frames()"
           [nowPlaying]="{
             title: anime().title,
@@ -121,6 +126,8 @@
           (detach)="detachToWindow($event)"
           (ended)="markEnded($event)"
           (nextEpisode)="goToNextEpisode()"
+          (previousEpisode)="goToPreviousEpisode()"
+          (nativeSelection)="selectFromPlayer($event)"
           (playbackPaused)="saveAndFlush($event)"
           (playbackStarted)="markWatched($event)"
           (progress)="saveProgress($event)"

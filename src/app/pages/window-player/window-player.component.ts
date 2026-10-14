@@ -21,6 +21,8 @@ import { UserService } from '../../api/user.service';
 import { isCvhDubbing, isKodik } from '../../api/video-source';
 import { WatchProgressService } from '../../api/watch-progress.service';
 import { type NowPlaying, sameNowPlaying } from '../../player/media-session';
+import type { NativePlaybackOption } from '../../player/native-playback-option';
+import type { PlayerTelemetryTarget } from '../../telemetry/telemetry.types';
 import { orderPreviewFrames } from '../../player/preview-frames';
 import {
   type PlaybackProgress,
@@ -195,6 +197,92 @@ export class WindowPlayerComponent {
         }
       : null;
   }, { equal: sameNowPlaying });
+
+  private readonly selectedIndex = computed(() => {
+    const current = this.selected();
+
+    return current
+      ? this.videos().findIndex((video) => video.videoId === current.videoId)
+      : -1;
+  });
+
+  readonly isFirstEpisode = computed(
+    () => this.task() !== undefined || this.selectedIndex() <= 0
+  );
+
+  /** Подписи соседних серий для подсказок кнопок ⏮/⏭ в плеере. */
+  readonly previousEpisodeLabel = computed(() => {
+    const previous = this.task()
+      ? undefined
+      : this.videos()[this.selectedIndex() - 1];
+    return previous ? `серия ${previous.number}` : '';
+  });
+
+  readonly nextEpisodeLabel = computed(() => {
+    const index = this.selectedIndex();
+    const next =
+      this.task() || index < 0 ? undefined : this.videos()[index + 1];
+    return next ? `серия ${next.number}` : '';
+  });
+
+  /**
+   * Серии для выбора в полноэкранном плеере. Окно открыто на одной озвучке —
+   * других оно не загружает, поэтому и выбор только среди её серий.
+   */
+  readonly nativeOptions = computed<readonly NativePlaybackOption[]>(() => {
+    const animeId = this.animeData.value()?.animeId;
+    if (this.task() || animeId === undefined) {
+      return [];
+    }
+
+    const onDisk = this.onDisk();
+    const records = this.localProgress
+      .records()
+      .filter((record) => record.animeId === animeId);
+    const watched = new Set(
+      this.remoteProgress.episodesFor(animeId, this.users.user()?.id ?? null)
+    );
+
+    return this.videos().map((video) => {
+      const episode = Number(video.number);
+      const record = records.find(
+        (item) =>
+          item.episode === episode && item.dubbing === video.data.dubbing
+      );
+      const progress =
+        record && record.durationSecs > 0
+          ? record.finished
+            ? 100
+            : Math.min((record.positionSecs / record.durationSecs) * 100, 100)
+          : 0;
+
+      return {
+        id: String(video.videoId),
+        episode,
+        dubbing: video.data.dubbing,
+        iframeUrl: video.iframeUrl,
+        skips: video.skips,
+        local: onDisk.has(video.videoId),
+        watched: watched.has(episode),
+        progress,
+      };
+    });
+  });
+
+  /** Скачанная задача играет с диска: плеер запишет её провайдером `local`. */
+  readonly telemetryTarget = computed<PlayerTelemetryTarget | null>(() => {
+    const task = this.taskItem();
+    if (task) {
+      return { animeId: task.animeId, episode: Number(task.episode), player: '' };
+    }
+
+    const animeId = this.animeData.value()?.animeId;
+    const episode = this.selected();
+
+    return animeId !== undefined && episode
+      ? { animeId, episode: Number(episode.number), player: episode.data.player }
+      : null;
+  });
 
   readonly isLastEpisode = computed(() => {
     if (this.task()) {
@@ -380,6 +468,24 @@ export class WindowPlayerComponent {
 
     if (animeId !== undefined && episode !== undefined) {
       this.remoteProgress.markWatched(animeId, userId, Number(episode));
+    }
+  }
+
+  goToPreviousEpisode(): void {
+    const previous = this.task()
+      ? undefined
+      : this.videos()[this.selectedIndex() - 1];
+
+    if (previous) {
+      this.selected.set(previous);
+    }
+  }
+
+  selectFromPlayer(iframeUrl: string): void {
+    const target = this.videos().find((video) => video.iframeUrl === iframeUrl);
+
+    if (target && !this.task()) {
+      this.selected.set(target);
     }
   }
 

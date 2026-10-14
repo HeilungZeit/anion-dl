@@ -2,9 +2,17 @@
   display: block;
 }
 
+// Плеер ушёл в кинотеатр или в угол — хост держит его место, чтобы страница
+// под ним не схлопнулась и не прыгнула.
+:host(.detached) {
+  aspect-ratio: 16 / 9;
+}
+
 .player {
   position: relative;
-  overflow: hidden;
+  // clip, а не hidden: hidden делает плеер скролл-контейнером, и автофокус
+  // в выезжающей панели (ещё за правым краем) прокручивает видео вбок.
+  overflow: clip;
   // Панель подстраивается под ширину самого плеера, а не окна: отдельное
   // окно плеера и узкая колонка бывают не шире телефона.
   container: player / inline-size;
@@ -13,6 +21,89 @@
   border-radius: var(--anion-radius-xl);
   background: #000;
   outline: none;
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+// Кинотеатр: плеер во всё окно поверх затемнённой страницы, с полями
+// и в пропорции 16:9 — по ширине или по высоте, что упрётся раньше.
+.theater-backdrop {
+  position: fixed;
+  z-index: 1100;
+  inset: 0;
+  background: rgb(0 0 0 / 92%);
+}
+
+.theater-backdrop--enter {
+  animation: fade-in var(--anion-duration-base) ease-out;
+}
+
+.player--theater {
+  position: fixed;
+  z-index: 1101;
+  inset: 0;
+  inline-size: min(100vw - 48px, (100dvh - 48px) * 16 / 9);
+  block-size: min(100dvh - 48px, (100vw - 48px) * 9 / 16);
+  margin: auto;
+  animation: pop-in var(--anion-duration-base) ease-out;
+}
+
+// Уход — тот же путь назад. Длительность совпадает с THEATER_LEAVE_MS.
+.theater-backdrop--leave {
+  animation: fade-out var(--anion-duration-base) ease-in forwards;
+}
+
+.player--theater-leave {
+  animation: pop-out var(--anion-duration-base) ease-in forwards;
+}
+
+// Мини-плеер в правом нижнем углу окна, поверх страницы.
+.player--mini {
+  position: fixed;
+  z-index: 990;
+  inset: auto var(--anion-space-16) var(--anion-space-16) auto;
+  inline-size: min(400px, 100vw - 32px);
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 80%);
+  animation: pop-in var(--anion-duration-base) ease-out;
+}
+
+.mini-actions {
+  position: absolute;
+  z-index: 4;
+  inset-block-start: var(--anion-space-8);
+  inset-inline-end: var(--anion-space-8);
+  display: flex;
+  gap: var(--anion-space-4);
+  transition: opacity var(--anion-duration-base) ease;
+}
+
+.player--idle .mini-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mini-actions__button {
+  display: grid;
+  inline-size: 30px;
+  block-size: 30px;
+  place-items: center;
+  border: none;
+  border-radius: var(--anion-radius-pill);
+  background: rgb(0 0 0 / 64%);
+  color: #fff;
+  cursor: pointer;
+  outline: none;
+
+  tui-icon {
+    font-size: var(--anion-icon-16);
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--anion-accent);
+  }
 
   &:focus-visible {
     box-shadow: var(--anion-focus-ring);
@@ -134,6 +225,11 @@
   opacity: 1;
 }
 
+// Заставка уходит в уже играющее видео, а не обрывается.
+.frames--leave {
+  animation: fade-out 600ms ease-out forwards;
+}
+
 .frames__dots {
   position: absolute;
   z-index: 2;
@@ -187,6 +283,9 @@
   justify-content: center;
   gap: var(--anion-space-12);
   background: rgb(0 0 0 / 62%);
+  // Пока ищется поток, под плашкой постер или кадры — размытые, а не резкие
+  // и спорящие с текстом.
+  backdrop-filter: blur(8px);
   color: var(--anion-text-primary);
   font-size: var(--anion-font-size-14);
   text-align: center;
@@ -229,6 +328,312 @@
 @keyframes spin {
   to {
     transform: rotate(1turn);
+  }
+}
+
+// Долгая буферизация посреди серии: застывший кадр гаснет и размывается,
+// чтобы спиннер читался. Задержка — короткие подгрузки не мигают размытием.
+.player__video,
+.player__canvas {
+  transition: filter var(--anion-duration-base) ease;
+}
+
+.player--stalled {
+  .player__video,
+  .player__canvas {
+    filter: blur(6px) brightness(0.6);
+    transition: filter 400ms ease 600ms;
+  }
+}
+
+// Подсказка перемотки стрелками у того края, куда перематывают.
+.tapseek {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 50%;
+  inset-inline-end: 4%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--anion-space-6);
+  padding: var(--anion-space-8) var(--anion-space-12);
+  border-radius: var(--anion-radius-pill);
+  background: rgb(0 0 0 / 56%);
+  color: #fff;
+  font-size: var(--anion-font-size-13);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: tapseek-in var(--anion-duration-base) ease-out;
+  // Плашка всё время на своём слое: иначе в конце анимации браузер снимает
+  // слой, пересчитывает дробное -50% в целые пиксели, и иконка подпрыгивает.
+  will-change: transform, opacity;
+
+  tui-icon {
+    display: block;
+    flex: none;
+    font-size: var(--anion-icon-18);
+  }
+}
+
+.tapseek--back {
+  inset-inline: 4% auto;
+}
+
+// Уход — тот же путь в обратную сторону. Элемент держит в DOM `animate.leave`.
+.tapseek--leave {
+  animation: tapseek-out var(--anion-duration-base) ease-in forwards;
+}
+
+@keyframes tapseek-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+}
+
+@keyframes tapseek-out {
+  to {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+}
+
+// Громкость с клавиатуры — та же плашка, что у перемотки, но сверху по
+// центру: по бокам живут ±10 с, в центре — большая ▶.
+.hud {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 16%;
+  inset-inline-start: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--anion-space-6);
+  padding: var(--anion-space-8) var(--anion-space-12);
+  border-radius: var(--anion-radius-pill);
+  background: rgb(0 0 0 / 56%);
+  color: #fff;
+  font-size: var(--anion-font-size-13);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  pointer-events: none;
+  translate: -50% 0;
+  animation: pop-in var(--anion-duration-base) ease-out;
+  will-change: scale, opacity;
+
+  tui-icon {
+    display: block;
+    flex: none;
+    font-size: var(--anion-icon-18);
+  }
+}
+
+// Новая серия — там же, где громкость: одновременно они не появляются.
+.hud--episode {
+  max-inline-size: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud--leave {
+  animation: pop-out var(--anion-duration-base) ease-in forwards;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    scale: 0.9;
+  }
+}
+
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    scale: 0.9;
+  }
+}
+
+// Вспышка ▶ при запуске: на месте большой кнопки, расходится и гаснет.
+.flash {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  display: grid;
+  inline-size: 76px;
+  block-size: 76px;
+  place-items: center;
+  border-radius: var(--anion-radius-pill);
+  background: rgb(0 0 0 / 52%);
+  color: #fff;
+  pointer-events: none;
+  translate: -50% -50%;
+  animation: flash-out 600ms ease-out forwards;
+
+  tui-icon {
+    font-size: 30px;
+    margin-inline-start: 4px;
+  }
+}
+
+@keyframes flash-out {
+  to {
+    opacity: 0;
+    scale: 1.4;
+  }
+}
+
+// В полном экране и кинотеатре не видно страницы — название и серия
+// сверху, вместе с нижней панелью.
+.topbar {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 0;
+  inset-inline: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: var(--anion-space-16) var(--anion-space-20) var(--anion-space-40);
+  background: linear-gradient(to bottom, rgb(0 0 0 / 72%), rgb(0 0 0 / 0%));
+  color: #fff;
+  pointer-events: none;
+  transition: opacity var(--anion-duration-base) ease,
+    transform var(--anion-duration-base) ease;
+}
+
+.topbar__info { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.topbar__picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-block-size: 44px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 48%);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  pointer-events: auto;
+  tui-icon { font-size: 18px; }
+  &:hover { background: rgb(255 255 255 / 15%); }
+  &:focus-visible { outline: 2px solid var(--anion-accent); outline-offset: 2px; }
+  &:disabled { opacity: .5; cursor: default; }
+}
+
+.picker-layer { position: absolute; z-index: 10; inset: 0; cursor: auto; }
+.picker-layer__shade { position: absolute; inset: 0; background: rgb(0 0 0 / 35%); }
+.picker-layer__panel {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: min(400px, 100%);
+  background: rgb(19 20 26 / 97%);
+  border-inline-start: 1px solid rgb(255 255 255 / 10%);
+  box-shadow: -16px 0 48px rgb(0 0 0 / 25%);
+  touch-action: pan-y;
+}
+
+// Анимация на слое удерживает его в DOM до конца выхода панели и затемнения.
+.picker-layer--enter {
+  animation: fade-in var(--anion-duration-base) ease-out;
+
+  .picker-layer__panel {
+    animation: picker-slide var(--anion-duration-base) ease-out;
+  }
+}
+
+.picker-layer--leave {
+  animation: fade-out var(--anion-duration-base) ease-in forwards;
+  pointer-events: none;
+
+  .picker-layer__panel {
+    animation: picker-slide var(--anion-duration-base) ease-in reverse forwards;
+  }
+}
+
+@keyframes picker-slide {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.player--picker-open .bar,
+.player--picker-open .topbar,
+.player--picker-open .bigplay { visibility: hidden; }
+
+@container player (max-width: 640px) {
+  .topbar__picker { padding-inline: 12px; span { display: none; } }
+  .picker-layer__panel { inline-size: min(360px, 100%); }
+}
+
+.topbar__title {
+  overflow: hidden;
+  font-size: var(--anion-font-size-18);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar__meta {
+  color: rgb(255 255 255 / 72%);
+  font-size: var(--anion-font-size-13);
+}
+
+.player--idle .topbar:not(:focus-within) {
+  opacity: 0;
+  transform: translateY(-100%);
+}
+
+// Плашка улучшения в полном экране и кинотеатре уходит под название.
+.player--fullscreen .upscale-badge,
+.player--theater .upscale-badge {
+  inset-block-start: 72px;
+}
+
+.bigplay--enter {
+  animation: pop-in var(--anion-duration-base) ease-out;
+}
+
+.bigplay--leave {
+  animation: fade-out var(--anion-duration-fast) ease-in forwards;
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+// Карточки «Продолжить», отсчёт и «Пропустить» выезжают снизу и туда же уходят.
+.card--enter {
+  animation: card-in var(--anion-duration-base) ease-out;
+}
+
+.card--leave {
+  animation: card-out var(--anion-duration-base) ease-in forwards;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes card-out {
+  to {
+    opacity: 0;
+    translate: 0 8px;
   }
 }
 
@@ -328,6 +733,53 @@
   justify-content: flex-end;
 }
 
+// Кольцо сходится за весь отсчёт: видно, сколько осталось, без чтения цифры.
+.autonext__ring {
+  position: relative;
+  display: grid;
+  inline-size: 22px;
+  block-size: 22px;
+  place-items: center;
+
+  svg {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    rotate: -90deg;
+  }
+
+  tui-icon {
+    font-size: 14px;
+  }
+}
+
+.autonext__ring-track,
+.autonext__ring-fill {
+  fill: none;
+  stroke-width: 2;
+}
+
+.autonext__ring-track {
+  stroke: rgb(255 255 255 / 30%);
+}
+
+.autonext__ring-fill {
+  stroke: currentColor;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  stroke-linecap: round;
+  animation-name: ring-fill;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes ring-fill {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 .autonext__go {
   display: inline-flex;
   align-items: center;
@@ -379,6 +831,8 @@
   // перебил бы `.seek__tip`, и подсказка превратилась бы в полоску 4px.
   .seek__track,
   .seek__buffer,
+  .seek__mark,
+  .seek__hover,
   .seek__fill {
     position: absolute;
     inset-block-start: 50%;
@@ -387,6 +841,24 @@
     border-radius: var(--anion-radius-pill);
     transform: translateY(-50%);
     pointer-events: none;
+    transition: block-size var(--anion-duration-fast) ease;
+  }
+
+  // Под курсором полоса толще — в неё проще попасть, как на YouTube.
+  &:hover,
+  &:focus-visible,
+  &:has(.seek__thumb--active) {
+    .seek__track,
+    .seek__buffer,
+    .seek__mark,
+    .seek__hover,
+    .seek__fill {
+      block-size: 6px;
+    }
+
+    .seek__thumb {
+      scale: 1;
+    }
   }
 }
 
@@ -418,6 +890,37 @@
 
 .seek__fill {
   background: linear-gradient(90deg, var(--anion-accent), #38bdf8);
+}
+
+// Опенинг и эндинг лежат под заливкой: в просмотренной части полоса
+// остаётся обычной, впереди видно, где начнутся титры.
+.seek__mark {
+  background: rgb(253 224 71 / 62%);
+}
+
+// Подсветка от начала до курсора — видно, куда придётся перемотка.
+.seek__hover {
+  background: rgb(255 255 255 / 28%);
+}
+
+.seek__thumb {
+  position: absolute;
+  inset-block-start: 50%;
+  inline-size: 13px;
+  block-size: 13px;
+  border-radius: var(--anion-radius-pill);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgb(0 0 0 / 18%);
+  pointer-events: none;
+  scale: 0;
+  transform: translate(-50%, -50%);
+  transition: scale var(--anion-duration-fast) ease;
+}
+
+.seek__tip-mark {
+  margin-inline-end: var(--anion-space-4);
+  color: rgb(253 224 71);
+  font-weight: 600;
 }
 
 .controls {
@@ -456,6 +959,12 @@
   &:focus-visible {
     box-shadow: var(--anion-focus-ring-inset);
   }
+
+  &:disabled {
+    background: none;
+    color: rgb(255 255 255 / 32%);
+    cursor: default;
+  }
 }
 
 .ghost--outlined {
@@ -472,16 +981,115 @@
   }
 }
 
+// Свои подсказки вместо системного title: тот появляется с задержкой
+// в секунду и выглядит чужим на тёмном кадре.
+@media (hover: hover) {
+  .controls [data-tip] {
+    position: relative;
+
+    &::after {
+      position: absolute;
+      z-index: 5;
+      inset-block-end: calc(100% + var(--anion-space-8));
+      inset-inline-start: 50%;
+      padding: var(--anion-space-4) var(--anion-space-8);
+      border-radius: var(--anion-radius-xs);
+      background: rgb(0 0 0 / 86%);
+      color: #fff;
+      content: attr(data-tip);
+      font-size: var(--anion-font-size-12);
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      translate: -50% 4px;
+      transition: opacity var(--anion-duration-fast) ease,
+        translate var(--anion-duration-fast) ease;
+      white-space: nowrap;
+    }
+
+    &:hover::after {
+      opacity: 1;
+      translate: -50% 0;
+      transition-delay: 300ms;
+    }
+  }
+
+  // Крайние кнопки: подсказка по центру вылезла бы за край плеера и обрезалась.
+  .controls > [data-tip]:first-child::after {
+    inset-inline-start: 0;
+    translate: 0 4px;
+  }
+
+  .controls > [data-tip]:first-child:hover::after {
+    translate: 0 0;
+  }
+
+  .controls > [data-tip]:last-child::after {
+    inset-inline: auto 0;
+    translate: 0 4px;
+  }
+
+  .controls > [data-tip]:last-child:hover::after {
+    translate: 0 0;
+  }
+
+  // Пока открыто меню качества или улучшения, подсказки ему не мешают.
+  .bar:has(.quality[open]) [data-tip]::after {
+    display: none;
+  }
+}
+
 .volume {
   display: flex;
   align-items: center;
   gap: var(--anion-space-4);
 }
 
+// Ползунок выезжает при наведении на звук, как на YouTube: в покое панель
+// не тратит на него место.
+// Свой вид вместо `accent-color`: браузер сам затемняет нативный ползунок
+// при наведении. Заливка — в тон полосе перемотки.
 .volume__slider {
-  inline-size: 88px;
-  accent-color: var(--anion-accent);
+  inline-size: 0;
+  block-size: 4px;
+  margin: 0;
+  border-radius: var(--anion-radius-pill);
+  background: linear-gradient(90deg, var(--anion-accent), #38bdf8)
+      0 / var(--volume-fill, 100%) 100% no-repeat,
+    rgb(255 255 255 / 26%);
+  opacity: 0;
   cursor: pointer;
+  appearance: none;
+  outline: none;
+  transition: inline-size var(--anion-duration-base) ease,
+    opacity var(--anion-duration-base) ease;
+
+  &::-webkit-slider-thumb {
+    inline-size: 12px;
+    block-size: 12px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    appearance: none;
+  }
+
+  &::-moz-range-thumb {
+    inline-size: 12px;
+    block-size: 12px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+  }
+
+  &:focus-visible {
+    box-shadow: var(--anion-focus-ring);
+  }
+}
+
+.volume:hover .volume__slider,
+.volume:focus-within .volume__slider {
+  inline-size: 88px;
+  opacity: 1;
 }
 
 .time {
@@ -533,6 +1141,45 @@
   &:focus-visible {
     background: var(--anion-surface-3);
     color: var(--anion-text-primary);
+  }
+}
+
+.quality__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--anion-space-12);
+  margin-block-start: var(--anion-space-4);
+  white-space: nowrap;
+}
+
+.quality__switch {
+  position: relative;
+  flex: none;
+  inline-size: 28px;
+  block-size: 16px;
+  border-radius: var(--anion-radius-pill);
+  background: rgb(255 255 255 / 24%);
+  transition: background var(--anion-duration-fast) ease;
+
+  &::after {
+    position: absolute;
+    inset-block-start: 2px;
+    inset-inline-start: 2px;
+    inline-size: 12px;
+    block-size: 12px;
+    border-radius: var(--anion-radius-pill);
+    background: #fff;
+    content: '';
+    transition: translate var(--anion-duration-fast) ease;
+  }
+}
+
+.quality__switch--on {
+  background: var(--anion-accent);
+
+  &::after {
+    translate: 12px 0;
   }
 }
 
@@ -666,11 +1313,9 @@
 // ——— узкий плеер ———
 //
 // Отдельное окно плеера можно сузить до ширины телефона. Вторичные контролы
-// тогда уходят, остаются play, звук, время, улучшение и качество: ±10 с
-// заменяют стрелки, громкость — колесо и клавиши, а справка по клавишам
-// открывается на «?».
+// тогда уходят, остаются play, серии, звук, время, улучшение и качество:
+// громкость — колесо и клавиши, а справка по клавишам открывается на «?».
 @container player (max-width: 640px) {
-  .controls__skip,
   .controls__hotkeys,
   .volume__slider {
     display: none;
@@ -746,11 +1391,34 @@
 
 @media (prefers-reduced-motion: reduce) {
   .overlay__spinner,
-  .upscale-badge__spinner {
+  .upscale-badge__spinner,
+  .tapseek,
+  .tapseek--leave,
+  .hud,
+  .hud--leave,
+  .bigplay--enter,
+  .bigplay--leave,
+  .card--enter,
+  .card--leave,
+  .frames--leave,
+  .theater-backdrop--enter,
+  .theater-backdrop--leave,
+  .player--theater,
+  .player--theater-leave,
+  .player--mini,
+  .picker-layer--enter,
+  .picker-layer--leave,
+  .picker-layer--enter .picker-layer__panel,
+  .picker-layer--leave .picker-layer__panel {
     animation: none;
   }
 
+  .flash {
+    display: none;
+  }
+
   .bar,
+  .topbar,
   .bigplay,
   .frames__image {
     transition: none;

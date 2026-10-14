@@ -76,3 +76,25 @@ a {
 
 // Let responsive grids shrink inside the desktop flex shell.
 tui-root { min-inline-size: 0; }
+
+// Кинотеатр плеера (video-player): плеер и затемнение лежат поверх всего
+// окна, а прокрутка страницы под ними выключается — иначе колесо мыши
+// уводило бы страницу из-под затемнения.
+html.player-theater .content {
+  overflow: hidden;
+}
+
+// Переходы между страницами (withViewTransitions): короче стандартных 250 мс,
+// и без анимации, если её просят убрать.
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

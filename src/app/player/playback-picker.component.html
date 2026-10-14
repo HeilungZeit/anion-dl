@@ -1,0 +1,91 @@
+<header class="picker__header">
+  <div>
+    <h2 id="playback-picker-title">Серии и озвучка</h2>
+    @if (current(); as option) {
+      <p>Серия {{ option.episode }} · {{ voiceOf(option.dubbing) }}</p>
+    }
+  </div>
+  <button cdkFocusInitial class="picker__close" type="button" aria-label="Закрыть серии и озвучку" (click)="closed.emit()">
+    <tui-icon icon="@tui.x" />
+  </button>
+</header>
+
+<div class="picker__tabs" role="group" aria-label="Раздел выбора">
+  <button type="button" [attr.aria-pressed]="tab() === 'episodes'" (click)="tab.set('episodes')">Серии</button>
+  <button type="button" [attr.aria-pressed]="tab() === 'dubbing'" (click)="tab.set('dubbing')">Озвучка</button>
+</div>
+
+@if (error()) {
+  <p class="picker__error" role="alert">{{ error() }}</p>
+}
+@if (pendingUrl()) {
+  <p class="picker__status" role="status">Подключаю выбранный поток…</p>
+}
+
+@if (tab() === 'episodes' && ranges().length) {
+  <div class="picker__ranges" role="group" aria-label="Диапазон серий">
+    @for (item of ranges(); track item.index) {
+      <button type="button" [attr.aria-pressed]="range() === item.index" (click)="selectRange(item.index)">{{ item.label }}</button>
+    }
+  </div>
+}
+
+<div #list class="picker__list">
+  @if (tab() === 'episodes') {
+    <div class="picker__episodes">
+      @for (option of visibleEpisodes(); track option.iframeUrl) {
+        <button
+          class="picker__episode"
+          type="button"
+          [attr.aria-current]="option.iframeUrl === currentUrl() ? 'true' : null"
+          [attr.aria-label]="'Серия ' + option.episode + (option.watched ? ', просмотрена' : '')"
+          [attr.aria-busy]="pendingUrl() === option.iframeUrl"
+          (click)="choose.emit(option.iframeUrl)"
+        >
+          <span class="picker__number">{{ option.episode }}</span>
+          <span class="picker__badge">
+            @if (pendingUrl() === option.iframeUrl) {
+              <span class="picker__spinner" aria-hidden="true"></span>
+            } @else if (option.iframeUrl === currentUrl()) {
+              <tui-icon icon="@tui.play" />
+            } @else if (option.watched) {
+              <tui-icon icon="@tui.check" />
+            }
+          </span>
+          @if (option.progress > 0) {
+            <span class="picker__progress" aria-hidden="true"><span [style.width.%]="option.progress"></span></span>
+          }
+        </button>
+      }
+    </div>
+  } @else {
+    @for (group of groups(); track group.title) {
+      <h3 class="picker__group">{{ group.title }}</h3>
+      @for (item of group.items; track item.name) {
+        <button
+          class="picker__dubbing"
+          type="button"
+          [disabled]="!item.target"
+          [attr.aria-pressed]="item.name === current()?.dubbing"
+          [attr.aria-busy]="!!item.target && pendingUrl() === item.target.iframeUrl"
+          (click)="item.target && choose.emit(item.target.iframeUrl)"
+        >
+          <span
+            ><strong>{{ item.label }}</strong
+            ><small
+              >{{ item.count }} эп.
+              @if (!item.target) {
+                · Нет серии {{ current()?.episode }}
+              }
+            </small></span
+          >
+          @if (item.target && pendingUrl() === item.target.iframeUrl) {
+            <span class="picker__spinner" aria-hidden="true"></span>
+          } @else if (item.name === current()?.dubbing) {
+            <tui-icon icon="@tui.check" />
+          }
+        </button>
+      }
+    }
+  }
+</div>

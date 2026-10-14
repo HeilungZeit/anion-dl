@@ -33,6 +33,8 @@ import {
   type PlaybackProgress,
   VideoPlayerComponent,
 } from '../../../../player/video-player.component';
+import type { NativePlaybackOption } from '../../../../player/native-playback-option';
+import type { PlayerTelemetryTarget } from '../../../../telemetry/telemetry.types';
 import { orderPreviewFrames } from '../../../../player/preview-frames';
 import { PlayerWindowService } from '../../../../windows/player-window.service';
 import { CommentsComponent } from '../comments/comments.component';
@@ -182,6 +184,80 @@ export class DescriptionTabComponent {
     const total = this.episodes().length;
 
     return total === 0 ? 0 : Math.round((this.watchedCount() / total) * 100);
+  });
+
+  private readonly selectedIndex = computed(() => {
+    const current = this.selectedEpisode();
+
+    return current
+      ? this.episodes().findIndex((video) => video.videoId === current.videoId)
+      : -1;
+  });
+
+  readonly isFirstEpisode = computed(() => this.selectedIndex() <= 0);
+
+  /** Подписи соседних серий для подсказок кнопок ⏮/⏭ в плеере. */
+  readonly previousEpisodeLabel = computed(() => {
+    const previous = this.episodes()[this.selectedIndex() - 1];
+    return previous ? `серия ${previous.number}` : '';
+  });
+
+  readonly nextEpisodeLabel = computed(() => {
+    const index = this.selectedIndex();
+    const next = index >= 0 ? this.episodes()[index + 1] : undefined;
+    return next ? `серия ${next.number}` : '';
+  });
+
+  /**
+   * Каталог для выбора серии и озвучки прямо в плеере: все серии обоих
+   * источников. Полоса просмотра — по локальной истории своей озвучки.
+   */
+  readonly nativeOptions = computed<readonly NativePlaybackOption[]>(() => {
+    const animeId = this.anime().animeId;
+    const onDisk = this.onDisk();
+    const watched = this.watched();
+    const progress = new Map<string, number>();
+
+    for (const record of this.localProgress.records()) {
+      if (
+        record.animeId === animeId &&
+        record.positionSecs > 0 &&
+        record.durationSecs > 0
+      ) {
+        progress.set(
+          `${record.dubbing}\n${record.episode}`,
+          record.finished
+            ? 100
+            : Math.min((record.positionSecs / record.durationSecs) * 100, 100)
+        );
+      }
+    }
+
+    return this.videos()
+      .filter((video) => Number(video.number) >= 1)
+      .map((video) => ({
+        id: String(video.videoId),
+        episode: Number(video.number),
+        dubbing: video.data.dubbing,
+        iframeUrl: video.iframeUrl,
+        skips: video.skips,
+        local: onDisk.has(video.videoId),
+        watched: watched.has(Number(video.number)),
+        progress:
+          progress.get(`${video.data.dubbing}\n${Number(video.number)}`) ?? 0,
+      }));
+  });
+
+  readonly telemetryTarget = computed<PlayerTelemetryTarget | null>(() => {
+    const episode = this.selectedEpisode();
+
+    return episode
+      ? {
+          animeId: this.anime().animeId,
+          episode: Number(episode.number),
+          player: episode.data.player,
+        }
+      : null;
   });
 
   readonly isLastEpisode = computed(() => {
@@ -480,6 +556,39 @@ export class DescriptionTabComponent {
       : this.anime().title;
 
     void this.playerWindows.open(route, title).catch(() => undefined);
+  }
+
+  goToPreviousEpisode(): void {
+    const previous = this.episodes()[this.selectedIndex() - 1];
+
+    if (previous) {
+      this.selectionWasExplicit = true;
+      this.selectedEpisode.set(previous);
+    }
+  }
+
+  /**
+   * Серия или озвучка, выбранная в самом плеере. Меняется что-то одно: при
+   * смене озвучки номер серии сохраняется, и эффект выбора серии оставит ту
+   * же, что выбрана здесь.
+   */
+  selectFromPlayer(iframeUrl: string): void {
+    const target = this.videos().find((video) => video.iframeUrl === iframeUrl);
+    const current = this.selectedEpisode();
+    if (!target || !current) {
+      return;
+    }
+
+    const otherDubbing = target.data.dubbing !== current.data.dubbing;
+    if (otherDubbing && target.number !== current.number) {
+      return;
+    }
+
+    this.selectionWasExplicit = true;
+    this.selectedEpisode.set(target);
+    if (otherDubbing) {
+      this.dubbingChange.emit(target.data.dubbing);
+    }
   }
 
   goToNextEpisode(): void {

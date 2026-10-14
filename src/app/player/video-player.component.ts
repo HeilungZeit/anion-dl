@@ -1,4 +1,6 @@
 import {
+  afterNextRender,
+  afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -6,12 +8,15 @@ import {
   effect,
   ElementRef,
   inject,
+  Injector,
   input,
   output,
   signal,
   untracked,
   viewChild,
 } from '@angular/core';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { DOCUMENT } from '@angular/common';
 import { TuiIcon } from '@taiga-ui/core';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
@@ -29,10 +34,16 @@ import {
   type NowPlaying,
   sameNowPlaying,
 } from './media-session';
+import type { NativePlaybackOption } from './native-playback-option';
+import { PlaybackPickerComponent } from './playback-picker.component';
 import { PlayerSettingsService } from './player-settings.service';
 import { ReResolveOnForbidden } from './re-resolve';
 import { expiryEpochMs, shouldRefreshAhead } from './signature-clock';
-import { SkipController, type SkipHint } from './skip-controller';
+import {
+  DEFAULT_WINDOW_SECONDS,
+  SkipController,
+  type SkipHint,
+} from './skip-controller';
 import {
   isWebGpuAvailable,
   startUpscale,
@@ -43,6 +54,13 @@ import {
   type UpscaleStats,
 } from './upscale';
 import { UpscaleFallback } from './upscale-fallback';
+import { ScreenWakeLock } from './wake-lock';
+import type { PlayerMeasurement } from '../telemetry/player-measurement';
+import { TelemetryService } from '../telemetry/telemetry.service';
+import type {
+  PlayerTelemetryContext,
+  PlayerTelemetryTarget,
+} from '../telemetry/telemetry.types';
 
 export interface PlaybackProgress {
   iframeUrl: string;
@@ -84,6 +102,30 @@ const FRAME_INTERVAL_MS = 6000;
 /** Громкость пишется на диск не на каждый шаг ползунка, а когда он замер. */
 const VOLUME_SAVE_MS = 500;
 
+/** Сколько держится подсказка «+10 с» после перемотки стрелками. */
+const SEEK_BADGE_SHOW_MS = 700;
+
+/** Сколько держится плашка громкости после ↑/↓/M. */
+const VOLUME_HUD_SHOW_MS = 900;
+
+/** Сколько держится плашка «Серия 5 · AniLibria» после смены серии. */
+const EPISODE_TOAST_SHOW_MS = 2500;
+
+/** Сколько секунд даётся, чтобы отменить автопропуск опенинга. */
+export const AUTO_SKIP_SECS = 3;
+
+/**
+ * Какая доля плеера должна уйти с экрана, чтобы он свернулся в мини-плеер.
+ * Не весь: пока виден краешек, смотреть уже неудобно.
+ */
+const MINI_VISIBLE_RATIO = 0.3;
+
+/** Уход из кинотеатра — столько длится его анимация (--anion-duration-base). */
+const THEATER_LEAVE_MS = 180;
+
+/** Вспышка ▶ по центру — столько длится её анимация. */
+const PLAY_FLASH_MS = 600;
+
 /**
  * За сколько до конца серии заранее резолвить следующую: к автопереходу
  * ссылка уже есть, и «Ищу поток…» не показывается.
@@ -97,6 +139,18 @@ const PREFETCH_LEAD_SECS = 3 * 60;
 const MEDIA_RECOVERY_WINDOW_MS = 10_000;
 
 /**
+ * Пауза перед новой попыткой заблаговременного обновления подписи, если
+ * резолвер не ответил. До истечения ещё минуты, поток играет — ронять его
+ * незачем.
+ */
+const REFRESH_AHEAD_RETRY_MS = 30_000;
+
+const RESOLVE_FAILED_TEXT = 'Не удалось получить поток серии. Попробуйте ещё раз.';
+const NETWORK_FAILED_TEXT =
+  'Не удалось загрузить видео. Проверьте соединение и попробуйте ещё раз.';
+const MEDIA_FAILED_TEXT = 'Не удалось воспроизвести видео. Попробуйте ещё раз.';
+
+/**
  * Горячие клавиши — и для обработчика, и для справки по «?». Буквы сверяются
  * по `event.code`, то есть по физической клавише: с русской раскладкой
  * `event.key` вместо «k» приносит «л», и управление молча переставало работать.
@@ -108,10 +162,11 @@ export const HOTKEYS: readonly { keys: string; action: string }[] = [
   { keys: '↑ / ↓', action: 'Громкость' },
   { keys: 'M', action: 'Выключить звук' },
   { keys: 'F', action: 'Полный экран' },
+  { keys: 'T', action: 'Режим кинотеатра' },
   { keys: 'P', action: 'Картинка в картинке' },
   { keys: 'N', action: 'Следующая серия' },
   { keys: '?', action: 'Эта справка' },
-  { keys: 'Esc', action: 'Закрыть справку, выйти из полного экрана' },
+  { keys: 'Esc', action: 'Закрыть справку, выйти из полного экрана или кинотеатра' },
 ];
 
 /**
@@ -122,6 +177,52 @@ interface WebKitVideo extends HTMLVideoElement {
   webkitSupportsPresentationMode?: (mode: string) => boolean;
   webkitSetPresentationMode?: (mode: string) => void;
   webkitPresentationMode?: string;
+}
+
+/** Подсказка перемотки у края: куда и на сколько секунд накопилось. */
+export interface SeekBadge {
+  side: -1 | 1;
+  secs: number;
+}
+
+/** Отрезок опенинга или эндинга на полосе перемотки, в процентах длины. */
+export interface SeekMark {
+  kind: 'opening' | 'ending';
+  start: number;
+  width: number;
+}
+
+/**
+ * Отметки опенинга и эндинга. У опенинга известно только начало — конец
+ * достраивается тем же окном, что и у кнопки пропуска. Эндинг идёт до конца
+ * серии.
+ */
+export function seekMarks(skips: VideoSkips, duration: number): SeekMark[] {
+  if (duration <= 0) {
+    return [];
+  }
+
+  const marks: SeekMark[] = [];
+  const percent = (secs: number): number => (secs / duration) * 100;
+
+  if (skips.opening !== undefined && skips.opening < duration) {
+    const end = Math.min(skips.opening + DEFAULT_WINDOW_SECONDS, duration);
+    marks.push({
+      kind: 'opening',
+      start: percent(skips.opening),
+      width: percent(end - skips.opening),
+    });
+  }
+
+  if (skips.ending !== undefined && skips.ending < duration) {
+    marks.push({
+      kind: 'ending',
+      start: percent(skips.ending),
+      width: percent(duration - skips.ending),
+    });
+  }
+
+  return marks;
 }
 
 /** Одна и та же подсказка пропуска — сигнал не должен дёргать шаблон. */
@@ -164,19 +265,39 @@ export function formatTime(totalSecs: number): string {
 
 @Component({
   selector: 'app-video-player',
-  imports: [TuiIcon, AutoCloseMenuDirective],
+  imports: [
+    TuiIcon,
+    AutoCloseMenuDirective,
+    CdkTrapFocus,
+    PlaybackPickerComponent,
+  ],
   templateUrl: './video-player.component.html',
   styleUrl: './video-player.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[class.detached]': 'theater() || mini()',
+  },
 })
 export class VideoPlayerComponent {
   private readonly resolver = inject(ResolverService);
   private readonly settings = inject(PlayerSettingsService);
+  private readonly injector = inject(Injector);
+  private readonly document = inject(DOCUMENT);
+  private readonly telemetry = inject(TelemetryService);
+  private measurement: PlayerMeasurement | null = null;
+  private readonly telemetryContext = signal<PlayerTelemetryContext | null>(null);
+  /** Сеанс, о выборе которого уже сообщили. */
+  private telemetrySelected = '';
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   /** URL плеера Kodik: из него резолвится манифест. */
   readonly iframeUrl = input.required<string>();
   readonly skips = input<VideoSkips>({});
+  readonly isFirstEpisode = input(false);
   readonly isLastEpisode = input(false);
+  /** Подписи соседних серий для подсказок ⏮/⏭, например «серия 5». */
+  readonly previousEpisodeLabel = input('');
+  readonly nextEpisodeLabel = input('');
   /**
    * Локатор следующей серии — для заранее готовой ссылки к автопереходу.
    * null — следующей нет или она скачана и сыграет с диска.
@@ -186,6 +307,25 @@ export class VideoPlayerComponent {
 
   /** Что показать в системной карточке «Сейчас играет»; null — ничего. */
   readonly nowPlaying = input<NowPlaying | null>(null);
+  /**
+   * Серии и озвучки для выбора прямо в плеере — в полном экране и
+   * кинотеатре. Пусто — кнопки выбора нет.
+   */
+  readonly nativeOptions = input<readonly NativePlaybackOption[]>([]);
+  /** Выбрана серия в плеере: родитель переключает на неё свой выбор. */
+  readonly nativeSelection = output<string>();
+  /** Тайтл и серия для статистики плееров; null — серию не считаем. */
+  readonly telemetryTarget = input<PlayerTelemetryTarget | null>(null);
+  /** Родитель мог пересоздать тот же объект — новый сеанс от этого не нужен. */
+  private readonly telemetryKey = computed(() => this.telemetryTarget(), {
+    equal: (a, b) =>
+      a?.animeId === b?.animeId &&
+      a?.episode === b?.episode &&
+      a?.player === b?.player,
+  });
+  readonly pickerOpen = signal(false);
+  readonly selectionPending = signal<string | null>(null);
+  readonly selectionError = signal('');
   /** Родитель мог пересоздать тот же объект — карточку это трогать не должно. */
   private readonly mediaInfo = computed(() => this.nowPlaying(), {
     equal: sameNowPlaying,
@@ -221,6 +361,7 @@ export class VideoPlayerComponent {
   readonly progress = output<PlaybackProgress>();
   readonly ended = output<PlaybackProgress>();
   readonly nextEpisode = output<void>();
+  readonly previousEpisode = output<void>();
   readonly playbackPaused = output<PlaybackProgress>();
   /**
    * Воспроизведение действительно пошло. Каждый `play`, а не только первый:
@@ -271,6 +412,9 @@ export class VideoPlayerComponent {
     if (this.switchingQuality()) {
       return '';
     }
+    if (this.qualityFailed()) {
+      return 'Не удалось сменить качество. Попробуйте ещё раз.';
+    }
 
     return actual !== null && actual < requested
       ? `${requested}p у этой серии нет — играет ${actual}p.`
@@ -278,6 +422,8 @@ export class VideoPlayerComponent {
   });
   /** Идёт смена качества: Rust проверяет манифесты, поток ещё старый. */
   readonly switchingQuality = signal(false);
+  /** Резолвер не отдал манифест нового качества — играет прежнее. */
+  readonly qualityFailed = signal(false);
 
   readonly position = signal(0);
   readonly duration = signal(0);
@@ -302,6 +448,25 @@ export class VideoPlayerComponent {
 
   /** Обратный отсчёт до следующей серии; null — отсчёта нет. */
   readonly autoNextSecs = signal<number | null>(null);
+  /** Отсчёт до автопропуска опенинга; null — отсчёта нет. */
+  readonly autoSkipSecs = signal<number | null>(null);
+  readonly autoSkipOpening = signal(false);
+
+  /**
+   * Кинотеатр: плеер поверх затемнённой страницы во всё окно, но без
+   * полноэкранного режима окна. Колонку страницы плеер покинуть не может,
+   * поэтому не растягивается в ней, а выходит поверх. В своём окне плеер
+   * и так занимает всё — там кинотеатра нет.
+   */
+  readonly theater = signal(false);
+  /** Кинотеатр закрывается: плеер ещё поверх страницы, но уже гаснет. */
+  readonly theaterLeaving = signal(false);
+
+  /** Плеер ушёл с экрана во время игры и смотрится в углу. */
+  readonly mini = signal(false);
+
+  /** Для кольца на кнопке «Смотреть»: оно сходится ровно за весь отсчёт. */
+  readonly autoNextTotalSecs = AUTO_NEXT_SECS;
 
   /** Кадры, которые не загрузились, — из показа убираются. */
   private readonly brokenFrames = signal<ReadonlySet<string>>(new Set());
@@ -316,8 +481,14 @@ export class VideoPlayerComponent {
    * запуска: на паузе посреди серии человек хочет видеть свой кадр.
    */
   readonly playedOnce = signal(false);
+  /**
+   * Первый кадр серии уже на экране. Заставка уходит по нему, а не по `play`:
+   * между нажатием и первым кадром проходит буферизация, и заставка сменялась
+   * чёрным прямоугольником.
+   */
+  readonly framePainted = signal(false);
   readonly showFrames = computed(
-    () => !this.playedOnce() && this.visibleFrames().length > 0
+    () => !this.framePainted() && this.visibleFrames().length > 0
   );
 
   /** Кадры в DOM: текущий, прошлый — для плавной смены — и следующий впрок. */
@@ -354,6 +525,39 @@ export class VideoPlayerComponent {
    */
   readonly scrubSecs = signal<number | null>(null);
   readonly shownPosition = computed(() => this.scrubSecs() ?? this.position());
+
+  /** Подсказка перемотки стрелками; null — не показывается. */
+  readonly seekBadge = signal<SeekBadge | null>(null);
+
+  /** Плашка громкости после клавиш; null — не показывается. */
+  readonly volumeHud = signal<number | null>(null);
+
+  /**
+   * Вспышка ▶ по центру при запуске. Массив из одного id, а не флаг: новый id
+   * пересоздаёт элемент, и анимация играет заново при каждом нажатии.
+   */
+  readonly playFlash = signal<readonly number[]>([]);
+
+  /**
+   * Плашка с новой серией и озвучкой после переключения; тот же приём с id,
+   * что у вспышки: быстрые ⏭ подряд показывают плашку заново.
+   */
+  readonly episodeToast = signal<readonly number[]>([]);
+
+  readonly seekMarks = computed(() => seekMarks(this.skips(), this.duration()));
+
+  /** Подпись отрезка под курсором для подсказки времени. */
+  readonly hoverMark = computed(() => {
+    const percent = this.hoverPercent();
+    if (this.hoverSecs() === null) {
+      return '';
+    }
+
+    const mark = this.seekMarks().find(
+      (item) => percent >= item.start && percent < item.start + item.width
+    );
+    return mark ? (mark.kind === 'opening' ? 'Опенинг' : 'Эндинг') : '';
+  });
 
   /** Для скринридера — целые секунды и время словами, а не «1234.5678». */
   readonly seekValueNow = computed(() => Math.floor(this.shownPosition()));
@@ -403,6 +607,22 @@ export class VideoPlayerComponent {
     viewChild<ElementRef<HTMLVideoElement>>('video');
   private readonly canvasRef =
     viewChild<ElementRef<HTMLCanvasElement>>('canvas');
+  private readonly playerRef = viewChild<ElementRef<HTMLElement>>('player');
+  private readonly pickerTrigger =
+    viewChild<ElementRef<HTMLButtonElement>>('pickerTrigger');
+  private selectionToken = 0;
+  private restorePickerFocus = false;
+  /**
+   * Поток серии, выбранной в плеере, — уже готовый. Родитель сменит
+   * `iframeUrl`, и эффект смены серии подключит его без второго резолва.
+   * `manifest` null — серия скачана и сыграет с диска.
+   */
+  private preparedSelection: {
+    iframeUrl: string;
+    manifest: string | null;
+    positionSecs: number;
+    resume: boolean;
+  } | null = null;
 
   private hls: Hls | null = null;
   private manifestUrl = '';
@@ -411,6 +631,8 @@ export class VideoPlayerComponent {
   private playbackReady = false;
   /** Снятие слушателя отложенной перемотки на стартовую позицию. */
   private pendingSeek: (() => void) | null = null;
+  /** Снятие слушателя готовности нативного HLS или файла с диска. */
+  private pendingReady: (() => void) | null = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
   private skipController = new SkipController({});
   private latch = new ReResolveOnForbidden();
@@ -430,8 +652,20 @@ export class VideoPlayerComponent {
 
   /** Отсекает ответы резолвера по сериям, которые уже закрыли. */
   private generation = 0;
-  private refreshing = false;
-  private expectResume = false;
+  /** Поколение, для которого идёт переролв; null — не идёт. */
+  private refreshGeneration: number | null = null;
+  private get refreshing(): boolean {
+    return this.refreshGeneration === this.generation;
+  }
+  /** Когда снова можно пробовать заблаговременное обновление (Date.now). */
+  private refreshAheadAfter = 0;
+  /** Во время обновления подписи пришёл 403 — сам он уже никого не разбудит. */
+  private forbiddenDuringRefresh = false;
+  /**
+   * Тихий переролв после сетевой ошибки уже потрачен. Возвращается первым
+   * загруженным сегментом: значит, поток снова живой.
+   */
+  private networkRetryUsed = false;
 
   /** Следующую серию запросил сам плеер — её поток стартует без нажатия. */
   private playNextOnLoad = false;
@@ -460,6 +694,22 @@ export class VideoPlayerComponent {
     typeof matchMedia === 'function' &&
     matchMedia('(prefers-reduced-motion: reduce)').matches;
   private volumeTimer: ReturnType<typeof setTimeout> | null = null;
+  private seekBadgeTimer: ReturnType<typeof setTimeout> | null = null;
+  private volumeHudTimer: ReturnType<typeof setTimeout> | null = null;
+  private playFlashTimer: ReturnType<typeof setTimeout> | null = null;
+  private playFlashId = 0;
+  private episodeToastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Первая серия открывается со страницей — о ней плашка не нужна. */
+  private episodeLoaded = false;
+  private readonly wakeLock = new ScreenWakeLock();
+  private autoSkipTimer: ReturnType<typeof setInterval> | null = null;
+  private theaterTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Опенинг этой серии уже пропущен или его решили смотреть — больше не предлагать. */
+  private openingAutoHandled = false;
+  /** Место плеера на странице видно. */
+  private hostVisible = true;
+  /** Мини-плеер закрыли крестиком — до возврата к плееру он не появится. */
+  private miniDismissed = false;
   /** Попытки подряд вытащить поток после ошибки декодера. */
   private mediaRecoveries = 0;
   private lastMediaRecoveryAt = 0;
@@ -477,11 +727,40 @@ export class VideoPlayerComponent {
   );
 
   constructor() {
+    // Закрытый выбор серии возвращает фокус туда, откуда его открыли, — но
+    // только когда новый поток уже подключён: во время «Ищу поток…» кнопки
+    // выбора нет, и фокус ушёл бы в `body`.
+    afterRenderEffect(() => {
+      const open = this.pickerOpen();
+      const ready = this.status() !== 'resolving';
+      const trigger = this.pickerTrigger()?.nativeElement;
+      if (this.restorePickerFocus && !open && ready) {
+        this.restorePickerFocus = false;
+        (trigger ?? this.playerRef()?.nativeElement)?.focus({
+          preventScroll: true,
+        });
+      }
+    });
+
     // Движение мыши слушается мимо шаблона: обработчик из шаблона в zoneless
     // запускал бы проверку изменений плеера на каждый пиксель пути курсора.
-    const host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+    const host = this.host;
     const onPointerMove = (): void => this.pokeControls();
     host.addEventListener('pointermove', onPointerMove, { passive: true });
+
+    // Хост остаётся на месте плеера и держит его размер, когда тот уходит в
+    // угол, — за ним и следим. В своём окне плеер с экрана не уходит.
+    const visibility =
+      typeof IntersectionObserver === 'function' && !IS_PLAYER_WINDOW
+        ? new IntersectionObserver(
+            ([entry]) => {
+              this.hostVisible = entry.intersectionRatio >= MINI_VISIBLE_RATIO;
+              this.updateMini();
+            },
+            { threshold: [0, MINI_VISIBLE_RATIO] }
+          )
+        : null;
+    visibility?.observe(host);
 
     this.mediaSession.bind({
       play: () => {
@@ -507,6 +786,11 @@ export class VideoPlayerComponent {
     void this.settings
       .getUpscale()
       .then((mode) => this.upscaleMode.set(mode));
+
+    void this.settings
+      .getAutoSkipOpening()
+      .then((enabled) => this.autoSkipOpening.set(enabled))
+      .catch(() => undefined);
 
     void this.settings
       .getVolume()
@@ -565,28 +849,100 @@ export class VideoPlayerComponent {
       );
     });
 
+    // Статистика плееров: каждая серия — свой сеанс. Эффект стоит раньше
+    // загрузки серии: её запуск уже пишется в измерение нового сеанса.
+    // Серия с диска считается отдельным провайдером `local`.
+    effect(() => {
+      this.iframeUrl();
+      const target = this.telemetryKey();
+
+      untracked(() => {
+        this.measurement?.close();
+        const context = this.telemetry.context(
+          target,
+          this.localPath() ? 'local' : undefined
+        );
+        this.telemetryContext.set(context);
+        this.measurement = this.telemetry.measurement(context);
+      });
+    });
+
+    // Выбор засчитывается, как только сбор разрешён: аккаунт мог ещё
+    // грузиться, когда серия открылась.
+    effect(() => {
+      const context = this.telemetryContext();
+      const enabled = this.telemetry.enabled();
+
+      if (context && enabled && this.telemetrySelected !== context.sessionId) {
+        this.telemetrySelected = context.sessionId;
+        untracked(() => this.telemetry.record(context, { name: 'selected' }));
+      }
+    });
+
     // Источник выбирается на смене серии и дальше не меняется: докачавшаяся
     // посреди просмотра серия не должна перезапускать воспроизведение с диска.
     effect(() => {
       const url = this.iframeUrl();
 
       untracked(() => {
+        const prepared =
+          this.preparedSelection?.iframeUrl === url ? this.preparedSelection : null;
+        this.preparedSelection = null;
+        this.cancelSelection();
         const localPath = this.localPath();
-        const startSecs = this.startPositionSecs();
+        const startSecs = prepared?.positionSecs ?? this.startPositionSecs();
         this.cancelAutoNext();
+        this.cancelAutoSkip();
+        this.openingAutoHandled = false;
+        this.skipHint.set(null);
         this.playedOnce.set(false);
-        this.resumeOffer.set(startSecs > 0 ? startSecs : null);
+        this.framePainted.set(false);
+        // Серию, выбранную в плеере, смотрят дальше — предлагать продолжить
+        // её с сохранённой секунды незачем.
+        this.resumeOffer.set(!prepared && startSecs > 0 ? startSecs : null);
+        if (this.episodeLoaded) {
+          this.showEpisodeToast();
+        }
+        this.episodeLoaded = true;
         this.skipController = new SkipController(
           this.skips(),
           this.isLastEpisode()
         );
         // Сама запускается только серия, на которую перешли из плеера
-        // («Следующая», отсчёт после титров). Открытие страницы и выбор серии
-        // в списке ставят её на паузу на постере.
-        const resume = this.playNextOnLoad;
+        // («Следующая», отсчёт после титров, выбор в плеере). Открытие
+        // страницы и выбор серии в списке ставят её на паузу на постере.
+        const resume = prepared?.resume ?? this.playNextOnLoad;
         this.playNextOnLoad = false;
+        if (resume) {
+          this.measurement?.request();
+        }
+
+        if (prepared?.manifest) {
+          // Поток уже получен, пока старая серия доигрывала, — подключаем
+          // его без второго резолва.
+          this.generation += 1;
+          this.unrenewedManifest = '';
+          this.stopWaitingForNetwork?.();
+          this.offline.set(false);
+          this.resetStreamGuards();
+          this.status.set('resolving');
+          this.errorText.set('');
+          this.switchingQuality.set(false);
+          this.attach(prepared.manifest, startSecs, url, resume);
+          this.closePicker();
+          return;
+        }
+
+        if (prepared) {
+          this.closePicker();
+        }
         void this.load(url, startSecs, localPath, resume);
       });
+    });
+
+    // Экран не гаснет, пока идёт серия: для системы человек «ничего не делает».
+    effect(() => {
+      this.wakeLock.set(!this.paused());
     });
 
     // Окно могут вывести из полноэкранного режима мимо нас — зелёной кнопкой
@@ -612,7 +968,12 @@ export class VideoPlayerComponent {
       .onResized(() => {
         void window
           .isFullscreen()
-          .then((value) => this.isFullscreen.set(value))
+          .then((value) => {
+            this.isFullscreen.set(value);
+            if (!value && !this.theater()) {
+              this.closePicker();
+            }
+          })
           .catch(() => undefined);
       })
       .then((stop) => {
@@ -620,7 +981,35 @@ export class VideoPlayerComponent {
       })
       .catch(() => undefined);
 
+    const suspendMeasurement = (): void => {
+      this.measurement?.pause();
+      void this.telemetry.flush();
+    };
+    const onVisibilityChange = (): void => {
+      if (this.document.visibilityState === 'hidden') {
+        suspendMeasurement();
+      }
+    };
+    this.document.addEventListener('visibilitychange', onVisibilityChange);
+    this.document.defaultView?.addEventListener('pagehide', suspendMeasurement);
+
     inject(DestroyRef).onDestroy(() => {
+      this.measurement?.close();
+      void this.telemetry.flush();
+      this.document.removeEventListener('visibilitychange', onVisibilityChange);
+      this.document.defaultView?.removeEventListener(
+        'pagehide',
+        suspendMeasurement
+      );
+      this.generation += 1;
+      this.cancelSelection();
+      visibility?.disconnect();
+      this.cancelAutoSkip();
+      if (this.theaterTimer !== null) {
+        clearTimeout(this.theaterTimer);
+      }
+      this.document.documentElement.classList.remove('player-theater');
+
       this.emitPausedProgress();
       unlisten?.();
       unlistenPlayback?.();
@@ -632,6 +1021,17 @@ export class VideoPlayerComponent {
       if (this.volumeTimer !== null) {
         clearTimeout(this.volumeTimer);
       }
+      for (const timer of [
+        this.seekBadgeTimer,
+        this.volumeHudTimer,
+        this.playFlashTimer,
+        this.episodeToastTimer,
+      ]) {
+        if (timer !== null) {
+          clearTimeout(timer);
+        }
+      }
+      this.wakeLock.destroy();
 
       this.stopWaitingForNetwork?.();
       this.cancelAutoNext();
@@ -640,6 +1040,140 @@ export class VideoPlayerComponent {
       this.teardown();
       this.mediaSession.clear();
     });
+  }
+
+  // ——— выбор серии в плеере ———
+
+  openPicker(): void {
+    if (
+      (!this.isFullscreen() && !this.theater()) ||
+      !this.nativeOptions().length
+    ) {
+      return;
+    }
+
+    this.helpOpen.set(false);
+    this.host
+      .querySelectorAll<HTMLDetailsElement>('details[open]')
+      .forEach((menu) => (menu.open = false));
+    this.cancelAutoNext();
+    this.cancelAutoSkip();
+    this.selectionError.set('');
+    this.pickerOpen.set(true);
+    this.pokeControls();
+  }
+
+  closePicker(): void {
+    const wasOpen = this.pickerOpen();
+    if (wasOpen) {
+      this.restorePickerFocus = true;
+    }
+    this.pickerOpen.set(false);
+    this.cancelSelection();
+    if (wasOpen) {
+      this.pokeControls();
+    }
+  }
+
+  onPickerKeydown(event: KeyboardEvent): void {
+    // Стрелки и пробел принадлежат панели, а не управлению видео.
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closePicker();
+    }
+  }
+
+  private cancelSelection(): void {
+    this.selectionToken += 1;
+    this.selectionPending.set(null);
+  }
+
+  /**
+   * Серия или озвучка из панели выбора. Поток новой серии резолвится, пока
+   * старая ещё играет, и только потом выбор уходит родителю: «Ищу поток…»
+   * на чёрном экране не появляется. Скачанную серию резолвить не нужно.
+   */
+  async selectPlayback(iframeUrl: string): Promise<void> {
+    const options = this.nativeOptions();
+    const target = options.find((option) => option.iframeUrl === iframeUrl);
+    const sourceUrl = this.iframeUrl();
+    const source = options.find((option) => option.iframeUrl === sourceUrl);
+    if (!this.pickerOpen() || !source || !target) {
+      return;
+    }
+    // Меняется что-то одно: серия в той же озвучке или озвучка той же серии.
+    if (target.dubbing !== source.dubbing && target.episode !== source.episode) {
+      return;
+    }
+    if (iframeUrl === sourceUrl) {
+      this.closePicker();
+      return;
+    }
+
+    const token = ++this.selectionToken;
+    this.selectionPending.set(iframeUrl);
+    this.selectionError.set('');
+    try {
+      const manifest = target.local
+        ? null
+        : await this.resolveManifest(iframeUrl);
+      if (token !== this.selectionToken || sourceUrl !== this.iframeUrl()) {
+        return;
+      }
+      const latest = this.nativeOptions().find(
+        (option) => option.iframeUrl === iframeUrl
+      );
+      if (
+        !latest ||
+        (latest.dubbing !== source.dubbing && latest.episode !== source.episode)
+      ) {
+        this.cancelSelection();
+        this.selectionError.set(
+          'Этот поток больше недоступен. Выберите другую серию или озвучку.'
+        );
+        return;
+      }
+
+      // Позиция берётся после резолва: старое видео всё это время играло.
+      const video = this.videoRef()?.nativeElement;
+      const positionSecs = video?.currentTime || this.position();
+      const resume = video ? !video.paused : !this.paused();
+      const prepared = {
+        iframeUrl,
+        manifest,
+        resume,
+        positionSecs: target.episode === source.episode ? positionSecs : 0,
+      };
+      this.preparedSelection = prepared;
+      // Старая дорожка дописывает позицию до того, как родитель сменит выбор,
+      // и замолкает. Иначе pause старого видео пометил бы новую серию.
+      this.detachCurrent();
+      this.nativeSelection.emit(iframeUrl);
+      // Родитель мог выбор не принять: тогда iframeUrl не сменится, и
+      // заготовку никто не заберёт. Старый поток уже снят — поднимаем его.
+      afterNextRender(
+        () => {
+          if (this.preparedSelection !== prepared) {
+            return;
+          }
+          this.preparedSelection = null;
+          void this.load(sourceUrl, positionSecs, this.localPath(), resume);
+          this.selectionError.set(
+            'Не удалось переключить поток. Попробуйте ещё раз.'
+          );
+        },
+        { injector: this.injector }
+      );
+    } catch {
+      if (token !== this.selectionToken) {
+        return;
+      }
+      this.selectionPending.set(null);
+      this.selectionError.set(
+        'Не удалось подключить выбранный поток. Попробуйте ещё раз.'
+      );
+    }
   }
 
   // ——— загрузка ———
@@ -653,6 +1187,7 @@ export class VideoPlayerComponent {
     localPath: string | null = null,
     resume = this.hasStarted()
   ): Promise<void> {
+    this.cancelSelection();
     const token = ++this.generation;
 
     this.stopWaitingForNetwork?.();
@@ -664,8 +1199,8 @@ export class VideoPlayerComponent {
     this.stopTicker();
     this.detachCurrent();
     this.manifestUrl = '';
-    this.latch = new ReResolveOnForbidden();
-    this.expectResume = false;
+    this.unrenewedManifest = '';
+    this.resetStreamGuards();
 
     this.status.set('resolving');
     this.errorText.set('');
@@ -681,14 +1216,14 @@ export class VideoPlayerComponent {
       await this.qualityRestored;
       const manifest = await this.resolveManifest(iframeUrl);
 
-      if (token !== this.generation) {
+      if (token !== this.generation || iframeUrl !== this.iframeUrl()) {
         return;
       }
 
       this.attach(manifest, positionSecs, iframeUrl, resume);
-    } catch (error: unknown) {
-      if (token === this.generation) {
-        this.fail(error instanceof Error ? error.message : String(error));
+    } catch {
+      if (token === this.generation && iframeUrl === this.iframeUrl()) {
+        this.fail(RESOLVE_FAILED_TEXT, 'resolve');
       }
     }
   }
@@ -747,7 +1282,7 @@ export class VideoPlayerComponent {
       await invoke('allow_playback', { path });
     } catch (error: unknown) {
       if (token === this.generation) {
-        this.fail(String(error));
+        this.fail(String(error), 'local');
       }
       return;
     }
@@ -764,17 +1299,25 @@ export class VideoPlayerComponent {
     this.actualQuality.set(null);
 
     video.crossOrigin = 'anonymous';
-    video.addEventListener(
-      'loadedmetadata',
-      () => {
-        if (token === this.generation) {
-          this.onReady(video, positionSecs, resume);
-        }
-      },
-      { once: true }
-    );
+    const ready = (): void => {
+      if (token === this.generation && this.iframeUrl() === iframeUrl) {
+        this.pendingReady = null;
+        this.onReady(video, positionSecs, resume);
+      }
+    };
+    video.addEventListener('loadedmetadata', ready, { once: true });
+    this.pendingReady = () => video.removeEventListener('loadedmetadata', ready);
     video.src = convertFileSrc(path);
     this.startTicker();
+  }
+
+  /** Новый поток начинает без следов ошибок прежнего. */
+  private resetStreamGuards(): void {
+    this.latch = new ReResolveOnForbidden();
+    this.refreshAheadAfter = 0;
+    this.forbiddenDuringRefresh = false;
+    this.networkRetryUsed = false;
+    this.qualityFailed.set(false);
   }
 
   /** До destroy старый поток ещё хранит честную позицию — сохраняем её. */
@@ -782,6 +1325,8 @@ export class VideoPlayerComponent {
     // Событие pause после уничтожения MediaSource уже может принести 0/0.
     this.emitPausedProgress();
     this.cancelPendingSeek();
+    this.pendingReady?.();
+    this.pendingReady = null;
     this.playbackReady = false;
     this.buffering.set(false);
     this.destroyHls();
@@ -816,21 +1361,43 @@ export class VideoPlayerComponent {
     this.manifestUrl = manifestUrl;
     this.playbackIframeUrl = iframeUrl;
     this.actualQuality.set(qualityOf(manifestUrl));
+    this.mediaRecoveries = 0;
+    this.lastMediaRecoveryAt = 0;
 
     if (Hls.isSupported()) {
       const hls = new Hls(this.hlsConfig(positionSecs));
       this.hls = hls;
 
-      hls.on(Hls.Events.ERROR, (_event, data) => this.onHlsError(data));
-      hls.on(Hls.Events.MANIFEST_PARSED, () =>
-        this.onReady(video, positionSecs, resume)
-      );
+      // События принадлежат экземпляру потока. Во время detach/destroy
+      // они ещё могут прийти, но менять загрузку новой серии уже не должны.
+      const current = (): boolean =>
+        this.hls === hls && this.iframeUrl() === iframeUrl;
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (current()) {
+          this.onHlsError(data);
+        }
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (current()) {
+          this.onReady(video, positionSecs, resume);
+        }
+      });
+      // Сегмент скачан — подпись и сеть снова в порядке. Признак надёжнее
+      // «видео заиграло»: hls.js докачивает буфер и на паузе, и 403 там
+      // ловится так же.
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        if (!current()) {
+          return;
+        }
+        this.latch.onPlaybackResumed();
+        this.networkRetryUsed = false;
+      });
       // WKWebView может застрять в долях секунды от конца потока и не прислать
       // `ended`: без этого не было ни отсчёта до следующей серии, ни отметки
       // досмотра, а серия начиналась заново. hls.js такой застой распознаёт
       // сам. Паузу ставим явно, чтобы вебвью не продолжил играть с начала.
       hls.on(Hls.Events.MEDIA_ENDED, (_event, data) => {
-        if (data.stalled && !this.endHandled) {
+        if (current() && data.stalled && !this.endHandled) {
           video.pause();
           this.onEnded();
         }
@@ -845,18 +1412,23 @@ export class VideoPlayerComponent {
     // WKWebView умеет HLS сам, и это не теоретический запасной путь: сборки
     // WebKitGTK без MediaSource существуют, а там hls.js не заработает вовсе.
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      const token = this.generation;
+      const ready = (): void => {
+        if (token === this.generation && this.iframeUrl() === iframeUrl) {
+          this.pendingReady = null;
+          this.onReady(video, positionSecs, resume);
+        }
+      };
+      video.addEventListener('loadedmetadata', ready, { once: true });
+      this.pendingReady = () => video.removeEventListener('loadedmetadata', ready);
       video.src = manifestUrl;
-      video.addEventListener(
-        'loadedmetadata',
-        () => this.onReady(video, positionSecs, resume),
-        { once: true }
-      );
       this.startTicker();
       return;
     }
 
     this.fail(
-      'Этот вебвью не умеет ни MediaSource, ни HLS — воспроизведение недоступно.'
+      'Этот вебвью не умеет ни MediaSource, ни HLS — воспроизведение недоступно.',
+      'unsupported'
     );
   }
 
@@ -975,7 +1547,9 @@ export class VideoPlayerComponent {
     this.pendingSeek = null;
   }
 
-  private fail(message: string): void {
+  /** @param code причина для статистики плееров — без текста ошибки. */
+  private fail(message: string, code = 'playback'): void {
+    this.measurement?.error(code);
     this.status.set('error');
     this.errorText.set(message);
     this.stopTicker();
@@ -984,7 +1558,10 @@ export class VideoPlayerComponent {
   // ——— ошибки и обновление подписи ———
 
   private onHlsError(data: ErrorData): void {
-    if (this.refreshing) {
+    // Во время обновления подписи подавляем только повторные 403. Другие
+    // фатальные ошибки не должны оставлять остановленный hls.js со спиннером.
+    if (this.refreshing && data.response?.code === 403) {
+      this.forbiddenDuringRefresh = true;
       return;
     }
 
@@ -993,7 +1570,7 @@ export class VideoPlayerComponent {
         void this.refresh();
         return;
       case 'fail':
-        this.fail('Подпись потока истекла, обновить не удалось.');
+        this.fail('Подпись потока истекла, обновить не удалось.', 'expired');
         return;
       case 'propagate':
         if (!data.fatal) {
@@ -1004,15 +1581,23 @@ export class VideoPlayerComponent {
           return;
         }
 
-        if (
-          data.type === Hls.ErrorTypes.NETWORK_ERROR &&
-          navigator.onLine === false
-        ) {
-          this.waitForNetwork();
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          if (navigator.onLine === false) {
+            this.waitForNetwork();
+            return;
+          }
+          // onLine врёт при сети без интернета, а упавший узел CDN новый
+          // резолв часто меняет на другой. Одна тихая попытка до ошибки.
+          if (!this.networkRetryUsed && !this.refreshing) {
+            this.networkRetryUsed = true;
+            void this.refresh();
+            return;
+          }
+          this.fail(NETWORK_FAILED_TEXT, 'network');
           return;
         }
 
-        this.fail(data.error?.message || 'Ошибка воспроизведения');
+        this.fail(MEDIA_FAILED_TEXT, 'media');
     }
   }
 
@@ -1087,12 +1672,15 @@ export class VideoPlayerComponent {
       return;
     }
 
-    this.refreshing = true;
     // Своё поколение: смена качества или серии посреди переролва делает его
     // ответ ненужным, и без проверки поток подключился бы дважды. Плановое
     // обновление поколение не забирает — его ответ может не понадобиться, и
     // отменённая им смена качества так и висела бы.
     const token = ahead ? this.generation : ++this.generation;
+    this.refreshGeneration = token;
+    this.forbiddenDuringRefresh = false;
+    const iframeUrl = this.iframeUrl();
+    let attached = false;
 
     try {
       const video = this.videoRef()?.nativeElement;
@@ -1105,11 +1693,11 @@ export class VideoPlayerComponent {
       const resume = video ? !video.paused : this.hasStarted();
 
       const manifest = await this.resolver.resolvePlayback(
-        this.iframeUrl(),
+        iframeUrl,
         this.requestedQuality()
       );
 
-      if (token !== this.generation) {
+      if (token !== this.generation || iframeUrl !== this.iframeUrl()) {
         return;
       }
 
@@ -1120,16 +1708,33 @@ export class VideoPlayerComponent {
         return;
       }
 
-      this.expectResume = true;
-      this.attach(manifest, position, this.iframeUrl(), resume);
-    } catch (error: unknown) {
-      if (token === this.generation) {
-        this.fail(
-          error instanceof Error ? error.message : 'Не удалось обновить поток'
-        );
+      attached = true;
+      this.attach(manifest, position, iframeUrl, resume);
+    } catch {
+      if (token === this.generation && iframeUrl === this.iframeUrl()) {
+        if (ahead) {
+          // Подпись ещё жива и поток играет: попробуем позже, а не уроним его.
+          this.refreshAheadAfter = Date.now() + REFRESH_AHEAD_RETRY_MS;
+        } else {
+          this.fail(RESOLVE_FAILED_TEXT, 'resolve');
+        }
       }
     } finally {
-      this.refreshing = false;
+      // Запрос предыдущей серии может завершиться после нового обновления.
+      if (this.refreshGeneration === token) {
+        this.refreshGeneration = null;
+        // 403 во время обновления был подавлен, а нового потока так и не
+        // подключили: hls.js стоит, и разбудить его больше некому.
+        if (
+          ahead &&
+          this.forbiddenDuringRefresh &&
+          !attached &&
+          token === this.generation
+        ) {
+          this.forbiddenDuringRefresh = false;
+          void this.refresh();
+        }
+      }
     }
   }
 
@@ -1147,6 +1752,9 @@ export class VideoPlayerComponent {
 
       this.latch.rememberPosition(position);
       this.skipHint.set(this.skipController.visibleSkip(position, duration));
+      if (!this.pickerOpen()) {
+        this.updateAutoSkip(video.paused);
+      }
 
       if (duration > 0 && duration - position <= PREFETCH_LEAD_SECS) {
         this.prefetchNext();
@@ -1162,15 +1770,9 @@ export class VideoPlayerComponent {
         });
       }
 
-      // READY на каждом тике сбросил бы затвор и пропустил шторм сегментов,
-      // поэтому флаг снимается ровно один раз после переролва.
-      if (this.expectResume && !video.paused && video.readyState >= 3) {
-        this.expectResume = false;
-        this.latch.onPlaybackResumed();
-      }
-
       if (
         !this.refreshing &&
+        Date.now() >= this.refreshAheadAfter &&
         !this.switchingQuality() &&
         this.manifestUrl &&
         this.manifestUrl !== this.unrenewedManifest &&
@@ -1189,13 +1791,16 @@ export class VideoPlayerComponent {
   }
 
   private destroyHls(): void {
-    this.hls?.destroy();
+    const hls = this.hls;
     this.hls = null;
+    hls?.destroy();
   }
 
   private teardown(): void {
     this.stopTicker();
     this.cancelPendingSeek();
+    this.pendingReady?.();
+    this.pendingReady = null;
     this.destroyHls();
   }
 
@@ -1224,6 +1829,7 @@ export class VideoPlayerComponent {
     }
 
     this.position.set(video.currentTime);
+    this.measureTick(video);
 
     const ranges = video.buffered;
     for (let i = 0; i < ranges.length; i += 1) {
@@ -1234,6 +1840,50 @@ export class VideoPlayerComponent {
         this.bufferedTo.set(ranges.end(i));
         return;
       }
+    }
+  }
+
+  /**
+   * Время просмотра и режимы, в которых серия реально играла. Режим
+   * засчитывается раз за сеанс и только на идущем видео: включённый на паузе
+   * и тут же выключенный — не использование.
+   */
+  private measureTick(video: HTMLVideoElement): void {
+    const active = !video.paused && !this.buffering() && video.readyState >= 3;
+    this.measurement?.observe(
+      video.currentTime,
+      active,
+      video.seeking,
+      video.playbackRate
+    );
+    if (!active || video.seeking) {
+      return;
+    }
+
+    const quality = this.actualQuality();
+    if (quality) {
+      this.measurement?.feature('quality', String(quality), true);
+    }
+    if (this.upscaleActive()) {
+      this.measurement?.feature('upscale', this.upscaleMode(), true);
+    }
+    if (this.autoSkipOpening()) {
+      this.measurement?.feature('auto_skip', 'on', true);
+    }
+    if (this.isFullscreen()) {
+      this.measurement?.feature('fullscreen', 'on', true);
+    }
+    if (this.mini()) {
+      this.measurement?.feature('mini', 'on', true);
+    }
+    if (this.theater()) {
+      this.measurement?.feature('theater', 'on', true);
+    }
+    if (
+      document.pictureInPictureElement === video ||
+      (video as WebKitVideo).webkitPresentationMode === 'picture-in-picture'
+    ) {
+      this.measurement?.feature('pip', 'on', true);
     }
   }
 
@@ -1257,19 +1907,61 @@ export class VideoPlayerComponent {
     }, VOLUME_SAVE_MS);
   }
 
-  /** У HLS свои ошибки через hls.js, а у файла с диска других сигналов нет. */
+  /**
+   * У hls.js свои ошибки через его события, а у файла с диска и нативного
+   * HLS (WebKitGTK без MediaSource) других сигналов нет. Код ответа нативный
+   * HLS не отдаёт, поэтому 403 и сбой сети неразличимы: один тихий переролв
+   * через затвор, повтор — ошибка.
+   */
   onVideoError(): void {
-    if (this.isLocal() && this.status() !== 'error') {
-      this.fail('Не удалось воспроизвести файл с диска.');
+    if (this.isLocal()) {
+      if (this.status() !== 'error') {
+        this.fail('Не удалось воспроизвести файл с диска.', 'local');
+      }
+      return;
     }
+
+    const video = this.videoRef()?.nativeElement;
+    if (
+      !video ||
+      this.hls ||
+      !this.manifestUrl ||
+      video.getAttribute('src') !== this.manifestUrl
+    ) {
+      return;
+    }
+
+    if (navigator.onLine === false) {
+      this.waitForNetwork();
+      return;
+    }
+    if (this.refreshing) {
+      this.forbiddenDuringRefresh = true;
+      return;
+    }
+    if (this.latch.onSegmentError(403) === 'reresolve') {
+      void this.refresh();
+      return;
+    }
+    this.fail(NETWORK_FAILED_TEXT, 'network');
   }
 
   onWaiting(): void {
+    if (!this.videoRef()?.nativeElement.paused) {
+      this.measurement?.waiting();
+    }
     this.buffering.set(true);
   }
 
   onPlaying(): void {
+    this.measurement?.playing();
+    this.framePainted.set(true);
     this.buffering.set(false);
+    // Нативный HLS о сегментах не сообщает: живость потока — то, что он играет.
+    if (!this.hls && !this.isLocal()) {
+      this.latch.onPlaybackResumed();
+      this.networkRetryUsed = false;
+    }
   }
 
   onEnded(): void {
@@ -1277,6 +1969,7 @@ export class VideoPlayerComponent {
       return;
     }
 
+    this.measurement?.pause();
     this.endHandled = true;
     this.buffering.set(false);
     this.paused.set(true);
@@ -1293,6 +1986,7 @@ export class VideoPlayerComponent {
   }
 
   onPlay(): void {
+    this.measurement?.request();
     // Повторный запуск после конца — новый просмотр, у которого будет свой конец.
     this.endHandled = false;
     this.paused.set(false);
@@ -1301,6 +1995,7 @@ export class VideoPlayerComponent {
     this.playedOnce.set(true);
     this.resumeOffer.set(null);
     this.pokeControls();
+    this.updateMini();
 
     // Серия может играть в нескольких окнах сразу — две звуковые дорожки в
     // уши никому не нужны. Чужие плееры замолкают, а не закрываются: зритель
@@ -1315,6 +2010,7 @@ export class VideoPlayerComponent {
   }
 
   onPause(): void {
+    this.measurement?.pause();
     this.buffering.set(false);
     this.paused.set(true);
     this.mediaSession.setPlaying(false);
@@ -1374,6 +2070,60 @@ export class VideoPlayerComponent {
     this.detach.emit(route);
   }
 
+  /**
+   * Подсказка «+10 с» у края, куда перематывают стрелками. Без неё перемотка
+   * при скрытой панели выглядела как случайный рывок кадра. Серия перемоток
+   * в ту же сторону копит секунды, как на YouTube.
+   */
+  private showSeekBadge(side: -1 | 1): void {
+    const previous = this.seekBadge();
+    const secs =
+      previous?.side === side ? previous.secs + SEEK_STEP_SECS : SEEK_STEP_SECS;
+    this.seekBadge.set({ side, secs });
+
+    if (this.seekBadgeTimer !== null) {
+      clearTimeout(this.seekBadgeTimer);
+    }
+    this.seekBadgeTimer = setTimeout(() => {
+      this.seekBadgeTimer = null;
+      this.seekBadge.set(null);
+    }, SEEK_BADGE_SHOW_MS);
+  }
+
+  /** На паузе по центру и так большая ▶ — вспышка нужна только при запуске. */
+  private flashPlay(): void {
+    this.playFlash.set([++this.playFlashId]);
+
+    if (this.playFlashTimer !== null) {
+      clearTimeout(this.playFlashTimer);
+    }
+    this.playFlashTimer = setTimeout(() => {
+      this.playFlashTimer = null;
+      this.playFlash.set([]);
+    }, PLAY_FLASH_MS);
+  }
+
+  /**
+   * Громкость с клавиатуры меняется при скрытой панели — без плашки не видно,
+   * сработало ли нажатие. Значение читается после того, как видео его приняло.
+   */
+  private showVolumeHud(): void {
+    const video = this.videoRef()?.nativeElement;
+    if (!video) {
+      return;
+    }
+
+    this.volumeHud.set(video.muted ? 0 : Math.round(video.volume * 100));
+
+    if (this.volumeHudTimer !== null) {
+      clearTimeout(this.volumeHudTimer);
+    }
+    this.volumeHudTimer = setTimeout(() => {
+      this.volumeHudTimer = null;
+      this.volumeHud.set(null);
+    }, VOLUME_HUD_SHOW_MS);
+  }
+
   togglePlay(): void {
     const video = this.videoRef()?.nativeElement;
     if (!video) {
@@ -1381,8 +2131,10 @@ export class VideoPlayerComponent {
     }
 
     if (video.paused) {
+      this.measurement?.request();
       this.hasStarted.set(true);
-      void video.play().catch(() => undefined);
+      this.flashPlay();
+      void video.play().catch(() => this.measurement?.error('play_rejected'));
     } else {
       video.pause();
     }
@@ -1405,6 +2157,7 @@ export class VideoPlayerComponent {
       return;
     }
 
+    this.measurement?.feature('upscale', mode === 'off' ? 'off' : 'requested');
     // Выбор руками старше автоматики: дальше она в эту серию не вмешивается.
     this.fallback.release();
     this.upscaleNote.set('');
@@ -1460,6 +2213,7 @@ export class VideoPlayerComponent {
           // Цикл уже остановился сам; здесь остаётся показать причину и
           // погасить канву, чтобы под ней снова было видно обычное видео.
           if (token === this.upscaleToken) {
+            this.measurement?.featureError('upscale');
             this.upscaleError.set(message);
             this.upscaleStats.set(null);
             this.upscalePreparing.set(false);
@@ -1477,6 +2231,7 @@ export class VideoPlayerComponent {
       // Молча откатываться нельзя: человек включил режим и должен понять,
       // почему картинка не изменилась.
       if (token === this.upscaleToken) {
+        this.measurement?.featureError('upscale');
         this.upscalePreparing.set(false);
         this.upscaleError.set(
           error instanceof Error ? error.message : 'Апскейл не запустился'
@@ -1506,7 +2261,7 @@ export class VideoPlayerComponent {
 
   /** Курсор ушёл с плеера — прятать сразу, но только если идёт воспроизведение. */
   hideControlsSoon(): void {
-    if (!this.paused()) {
+    if (!this.paused() && !this.pickerOpen()) {
       this.controlsVisible.set(false);
     }
   }
@@ -1525,7 +2280,7 @@ export class VideoPlayerComponent {
         return;
       }
 
-      if (!this.paused() && !this.scrubbing) {
+      if (!this.paused() && !this.scrubbing && !this.pickerOpen()) {
         this.controlsVisible.set(false);
       }
     }, delayMs);
@@ -1573,12 +2328,14 @@ export class VideoPlayerComponent {
    * перезагружал тот же самый поток.
    */
   changeQuality(quality: number): void {
+    this.cancelSelection();
     const same =
       quality === this.shownQuality() && quality === this.effectiveQuality();
     if (same || this.switchingQuality()) {
       return;
     }
 
+    this.measurement?.feature('quality', 'requested_' + quality);
     this.requestedQuality.set(quality);
     void this.settings.setQuality(quality).catch(() => undefined);
     void this.switchQuality(quality);
@@ -1592,7 +2349,9 @@ export class VideoPlayerComponent {
 
     const token = ++this.generation;
     const iframeUrl = this.playbackIframeUrl || this.iframeUrl();
+    const previous = this.actualQuality() ?? this.effectiveQuality();
     this.switchingQuality.set(true);
+    this.qualityFailed.set(false);
 
     try {
       const manifest = await this.resolver.changeManifestQuality(
@@ -1622,14 +2381,15 @@ export class VideoPlayerComponent {
       const positionSecs = video?.currentTime ?? this.position();
       const resume = video ? !video.paused : false;
 
-      this.expectResume = true;
       this.attach(manifest, positionSecs, iframeUrl, resume);
-    } catch (error: unknown) {
+    } catch {
       if (token === this.generation) {
+        // Старый поток цел и играет — ронять его из-за качества незачем.
+        this.measurement?.error('quality');
         this.switchingQuality.set(false);
-        this.fail(
-          error instanceof Error ? error.message : 'Не удалось сменить качество'
-        );
+        this.requestedQuality.set(previous);
+        void this.settings.setQuality(previous).catch(() => undefined);
+        this.qualityFailed.set(true);
       }
     }
   }
@@ -1677,7 +2437,7 @@ export class VideoPlayerComponent {
    * мог досматривать титры или собирался закрыть плеер.
    */
   private startAutoNext(): void {
-    if (this.isLastEpisode()) {
+    if (this.isLastEpisode() || this.pickerOpen()) {
       return;
     }
 
@@ -1704,7 +2464,19 @@ export class VideoPlayerComponent {
     this.autoNextSecs.set(null);
   }
 
+  private showEpisodeToast(): void {
+    if (this.episodeToastTimer !== null) {
+      clearTimeout(this.episodeToastTimer);
+    }
+    this.episodeToast.set([++this.playFlashId]);
+    this.episodeToastTimer = setTimeout(() => {
+      this.episodeToastTimer = null;
+      this.episodeToast.set([]);
+    }, EPISODE_TOAST_SHOW_MS);
+  }
+
   goNext(): void {
+    this.cancelSelection();
     this.cancelAutoNext();
 
     if (!this.isLastEpisode()) {
@@ -1712,6 +2484,17 @@ export class VideoPlayerComponent {
       this.hasStarted.set(true);
       this.playNextOnLoad = true;
       this.nextEpisode.emit();
+    }
+  }
+
+  goPrevious(): void {
+    this.cancelSelection();
+    this.cancelAutoNext();
+
+    if (!this.isFirstEpisode()) {
+      this.hasStarted.set(true);
+      this.playNextOnLoad = true;
+      this.previousEpisode.emit();
     }
   }
 
@@ -1754,12 +2537,165 @@ export class VideoPlayerComponent {
 
   /** Опенинг перематывается внутри серии, конец — уводит на следующую. */
   applySkip(hint: SkipHint): void {
+    this.measurement?.feature(
+      hint.kind === 'opening' ? 'skip_opening' : 'skip_ending'
+    );
     if (hint.kind === 'opening') {
+      this.openingAutoHandled = true;
+      this.cancelAutoSkip();
       this.seekTo(this.skipController.skipTargetSecs(hint.segment));
       return;
     }
 
     this.goNext();
+  }
+
+  // ——— автопропуск опенинга ———
+
+  /**
+   * Опенинг пропускается сам, но не сразу: плашка с отсчётом даёт передумать.
+   * Пока серия на паузе, отсчёт не начинается.
+   */
+  private updateAutoSkip(paused: boolean): void {
+    if (this.skipHint()?.kind !== 'opening') {
+      this.cancelAutoSkip();
+      return;
+    }
+
+    if (
+      paused ||
+      !this.autoSkipOpening() ||
+      this.openingAutoHandled ||
+      this.autoSkipTimer !== null
+    ) {
+      return;
+    }
+
+    this.autoSkipSecs.set(AUTO_SKIP_SECS);
+    this.autoSkipTimer = setInterval(() => {
+      const left = (this.autoSkipSecs() ?? 0) - 1;
+
+      if (left > 0) {
+        this.autoSkipSecs.set(left);
+        return;
+      }
+
+      this.skipOpeningNow();
+    }, 1000);
+  }
+
+  skipOpeningNow(): void {
+    const hint = this.skipHint();
+    this.openingAutoHandled = true;
+    this.cancelAutoSkip();
+
+    if (hint?.kind === 'opening') {
+      this.applySkip(hint);
+    }
+  }
+
+  /** «Смотреть опенинг»: в этой серии больше не предлагать. */
+  declineAutoSkip(): void {
+    this.openingAutoHandled = true;
+    this.cancelAutoSkip();
+  }
+
+  private cancelAutoSkip(): void {
+    if (this.autoSkipTimer !== null) {
+      clearInterval(this.autoSkipTimer);
+      this.autoSkipTimer = null;
+    }
+
+    this.autoSkipSecs.set(null);
+  }
+
+  toggleAutoSkipOpening(): void {
+    const enabled = !this.autoSkipOpening();
+    this.autoSkipOpening.set(enabled);
+    this.measurement?.feature('auto_skip', enabled ? 'on' : 'off');
+    void this.settings.setAutoSkipOpening(enabled).catch(() => undefined);
+
+    if (!enabled) {
+      this.cancelAutoSkip();
+    }
+  }
+
+  // ——— кинотеатр и мини-плеер ———
+
+  toggleTheater(): void {
+    if (IS_PLAYER_WINDOW || this.theaterLeaving()) {
+      return;
+    }
+
+    if (!this.theater()) {
+      this.theater.set(true);
+      this.mini.set(false);
+      // Класс на корне документа — для глобальных стилей: страница под
+      // затемнением не прокручивается (styles.scss).
+      this.document.documentElement.classList.add('player-theater');
+      return;
+    }
+
+    // Плеер — тот же элемент, а не @if, поэтому `animate.leave` тут не
+    // поможет: класс снимается после того, как отыграла анимация ухода.
+    if (this.reducedMotion) {
+      this.finishTheaterExit();
+      return;
+    }
+
+    this.theaterLeaving.set(true);
+    this.theaterTimer = setTimeout(
+      () => this.finishTheaterExit(),
+      THEATER_LEAVE_MS
+    );
+  }
+
+  private finishTheaterExit(): void {
+    if (!this.isFullscreen()) {
+      this.closePicker();
+    }
+    this.theaterTimer = null;
+    this.theaterLeaving.set(false);
+    this.theater.set(false);
+    this.document.documentElement.classList.remove('player-theater');
+    this.updateMini();
+  }
+
+  /**
+   * В угол уходит только играющая серия: остановленную человек оставил сам.
+   * На паузе внутри мини-плеера он остаётся — кнопка ▶ должна быть под рукой.
+   */
+  private updateMini(): void {
+    if (this.hostVisible) {
+      this.miniDismissed = false;
+      this.mini.set(false);
+      return;
+    }
+
+    if (
+      !this.mini() &&
+      !this.miniDismissed &&
+      !this.paused() &&
+      !this.theater() &&
+      !this.isFullscreen()
+    ) {
+      this.mini.set(true);
+    }
+  }
+
+  closeMini(): void {
+    this.miniDismissed = true;
+    this.mini.set(false);
+
+    const video = this.videoRef()?.nativeElement;
+    if (video && !video.paused) {
+      video.pause();
+    }
+  }
+
+  /** Вернуться к месту плеера; мини-плеер уберёт наблюдатель видимости. */
+  returnFromMini(): void {
+    this.host.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   /**
@@ -1824,8 +2760,15 @@ export class VideoPlayerComponent {
       case 'KeyF':
         void this.toggleFullscreen();
         return true;
+      case 'KeyT':
+        if (this.isFullscreen() || IS_PLAYER_WINDOW) {
+          return false;
+        }
+        this.toggleTheater();
+        return true;
       case 'KeyM':
         this.toggleMuted();
+        this.showVolumeHud();
         return true;
       case 'KeyP':
         void this.togglePip();
@@ -1841,9 +2784,11 @@ export class VideoPlayerComponent {
         return true;
       case 'ArrowRight':
         this.seekBy(SEEK_STEP_SECS);
+        this.showSeekBadge(1);
         return true;
       case 'ArrowLeft':
         this.seekBy(-SEEK_STEP_SECS);
+        this.showSeekBadge(-1);
         return true;
       case 'Home':
         this.seekTo(0);
@@ -1853,9 +2798,11 @@ export class VideoPlayerComponent {
         return true;
       case 'ArrowUp':
         this.setVolume(this.volume() + VOLUME_STEP);
+        this.showVolumeHud();
         return true;
       case 'ArrowDown':
         this.setVolume(this.volume() - VOLUME_STEP);
+        this.showVolumeHud();
         return true;
       case 'Escape':
         if (this.helpOpen()) {
@@ -1865,6 +2812,16 @@ export class VideoPlayerComponent {
 
         if (this.autoNextSecs() !== null) {
           this.cancelAutoNext();
+          return true;
+        }
+
+        if (this.autoSkipSecs() !== null) {
+          this.declineAutoSkip();
+          return true;
+        }
+
+        if (this.theater() && !this.isFullscreen()) {
+          this.toggleTheater();
           return true;
         }
 
