@@ -26,7 +26,10 @@ export type PlayerFeature =
   | 'theater'
   | 'mini'
   | 'cast'
-  | 'airplay';
+  | 'airplay'
+  | 'gpu'
+  | 'screen'
+  | 'upscale_perf';
 
 export interface PlayerTelemetryContext {
   sessionId: string;

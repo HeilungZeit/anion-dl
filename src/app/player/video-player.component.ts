@@ -56,6 +56,7 @@ import {
 import { UpscaleFallback } from './upscale-fallback';
 import { ScreenWakeLock } from './wake-lock';
 import type { PlayerMeasurement } from '../telemetry/player-measurement';
+import { gpuClass, screenClass, upscalePerf } from '../telemetry/hardware';
 import { TelemetryService } from '../telemetry/telemetry.service';
 import type {
   PlayerTelemetryContext,
@@ -101,6 +102,10 @@ const FRAME_INTERVAL_MS = 6000;
 
 /** Громкость пишется на диск не на каждый шаг ползунка, а когда он замер. */
 const VOLUME_SAVE_MS = 500;
+
+/** Замер скорости улучшения: окна статистики по секунде — разгон и сам замер. */
+const UPSCALE_PERF_WARMUP = 3;
+const UPSCALE_PERF_WINDOWS = 10;
 
 /** Сколько держится подсказка «+10 с» после перемотки стрелками. */
 const SEEK_BADGE_SHOW_MS = 700;
@@ -1879,6 +1884,7 @@ export class VideoPlayerComponent {
     if (this.theater()) {
       this.measurement?.feature('theater', 'on', true);
     }
+    this.reportHardware();
     if (
       document.pictureInPictureElement === video ||
       (video as WebKitVideo).webkitPresentationMode === 'picture-in-picture'
@@ -2166,6 +2172,16 @@ export class VideoPlayerComponent {
     await this.settings.setUpscale(mode);
   }
 
+  /** Видеокарта и экран — раз за сеанс и только с согласием: запрос адаптера не бесплатный. */
+  private reportHardware(): void {
+    const measurement = this.measurement;
+    if (!measurement || !this.telemetry.enabled()) {
+      return;
+    }
+    measurement.feature('screen', screenClass(window), true);
+    void gpuClass().then((gpu) => measurement.feature('gpu', gpu, true));
+  }
+
   private async applyUpscale(mode: UpscaleMode, ready: boolean): Promise<void> {
     // Запуск асинхронный: пока ждём адаптер и шейдеры, режим успевают
     // переключить ещё раз. Без метки оба запуска дожили бы до конца и рисовали
@@ -2184,6 +2200,13 @@ export class VideoPlayerComponent {
       return;
     }
 
+    // Один замер скорости на запуск: первые окна — разгон шейдеров и буфера,
+    // дальше ~10 секунд воспроизведения. Окна на паузе (`videoFps` = 0) не в счёт.
+    let perfWindows = 0;
+    let perfFps = 0;
+    let perfVideoFps = 0;
+    const perfDone = UPSCALE_PERF_WARMUP + UPSCALE_PERF_WINDOWS;
+
     try {
       const handle = await startUpscale({
         video,
@@ -2195,9 +2218,32 @@ export class VideoPlayerComponent {
           }
 
           this.upscaleStats.set(stats);
+          if (
+            stats.videoFps > 0 &&
+            ++perfWindows > UPSCALE_PERF_WARMUP &&
+            perfWindows <= perfDone
+          ) {
+            perfFps += stats.fps;
+            perfVideoFps += stats.videoFps;
+            if (perfWindows === perfDone) {
+              this.measurement?.feature(
+                'upscale_perf',
+                upscalePerf(mode, stats.sourceHeight, perfFps / perfVideoFps)
+              );
+            }
+          }
 
           const decision = this.fallback.observe(stats, performance.now());
           if (decision) {
+            // Откат случается раньше полного замера — без этого самые
+            // медленные запуски в статистику не попали бы вовсе.
+            if (perfWindows < perfDone && stats.videoFps > 0) {
+              perfWindows = perfDone;
+              this.measurement?.feature(
+                'upscale_perf',
+                upscalePerf(mode, stats.sourceHeight, stats.fps / stats.videoFps)
+              );
+            }
             // Настройку не переписываем: выбор человека остаётся прежним, а
             // на другой серии или другом качестве режим может и потянуть.
             this.upscaleNote.set(decision.reason);
